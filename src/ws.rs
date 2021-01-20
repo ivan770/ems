@@ -167,9 +167,7 @@ mod tests {
         }
 
         fn start_send(self: Pin<&mut Self>, item: T) -> Result<(), Self::Error> {
-            self.get_mut().0.send(item).unwrap();
-
-            Ok(())
+            Ok(self.get_mut().0.send(item).unwrap())
         }
 
         fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {

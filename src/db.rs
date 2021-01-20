@@ -12,6 +12,7 @@ use crate::handler::MessageHandlerAction;
 #[derive(Default)]
 pub struct HandlerDatabase {
     transcription: Queue<(Uuid, String)>,
+    // TODO: Check if it's possible to use Queue here to avoid double-Arc.
     handler_map: DashMap<Uuid, Sender<MessageHandlerAction>>,
 }
 
@@ -43,5 +44,43 @@ impl HandlerDatabase {
     /// Send an action to a message handler.
     pub fn send(&self, id: &Uuid, action: MessageHandlerAction) -> Option<()> {
         self.handler_map.get(id)?.send(action).ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use flume::unbounded;
+    use uuid::Uuid;
+
+    use crate::handler::MessageHandlerAction;
+
+    use super::HandlerDatabase;
+
+    const TEST_ID: Uuid = Uuid::nil();
+
+    #[test]
+    fn test_handler_actions() {
+        let database = HandlerDatabase::default();
+
+        let (sender, receiver) = unbounded();
+
+        database.add_handler(TEST_ID, sender);
+        database.send(&TEST_ID, MessageHandlerAction::Hangup);
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            MessageHandlerAction::Hangup
+        ));
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_transcription() {
+        let database = HandlerDatabase::default();
+
+        database.add_transcription(TEST_ID, String::from("test"));
+
+        assert!(
+            matches!(database.recv_transcription().await, (id, message) if id == TEST_ID && message == String::from("test"))
+        );
     }
 }

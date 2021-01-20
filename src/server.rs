@@ -146,7 +146,5 @@ where
 
     AnonymousMessageHandler::new(database, MessageStream::new(&mut read), &mut write, driver)
         .listen(max_time)
-        .await?;
-
-    Ok(())
+        .await
 }

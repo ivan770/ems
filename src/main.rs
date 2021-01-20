@@ -15,7 +15,7 @@ use config::{Cli, Config};
 use db::HandlerDatabase;
 use once_cell::sync::OnceCell;
 use server::AudioSocketServer;
-use tokio::join;
+use tokio::try_join;
 use tracing::subscriber::set_global_default;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use ws::WsServer;
@@ -67,11 +67,10 @@ async fn main() -> Result<()> {
 
     let config = CONFIG.get().expect("Config was not set previously");
 
-    join!(
+    try_join!(
         WsServer::new(config, database.clone()).listen(),
         AudioSocketServer::new(config, database).listen()
-    )
-    .1?;
+    )?;
 
     Ok(())
 }

@@ -1,0 +1,48 @@
+[package]
+name = "ems"
+version = "0.1.0"
+authors = ["ivan770 <leshenko.ivan770@gmail.com>"]
+edition = "2018"
+
+[profile.release]
+lto = true
+
+[features]
+default = ["gcs"]
+
+# Add support for Google Cloud Speech recognition
+gcs = ["tonic", "prost", "prost-types", "yup-oauth2", "tokio-stream"]
+
+# Enable jemalloc as default allocator
+jemalloc = ["jemallocator"]
+
+[dependencies]
+anyhow = { version = "1" }
+argh = { version = "0.1" }
+async-trait = { version = "0.1" }
+audiosocket = { version = "0.4" }
+dashmap = { version = "4" }
+deadqueue = { version = "0.2" }
+flume = { version = "0.10" }
+futures-util = { version = "0.3", features = ["sink"] }
+once_cell = { version = "1" }
+thiserror = { version = "1" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "io-util", "time"] }
+tokio-tungstenite = { version = "0.13" }
+toml = { version = "0.5" }
+tracing = { version = "0.1", features = ["attributes"] }
+tracing-futures = { version = "0.2" }
+tracing-subscriber = { version = "0.2" }
+uuid = { version = "0.8", features = ["serde"] }
+
+# GCS dependencies
+tonic = { version = "0.4", features = ["transport", "prost", "tls"], optional = true }
+prost = { version = "0.7", optional = true }
+prost-types = { version = "0.7", optional = true }
+yup-oauth2 = { version = "5", optional = true }
+tokio-stream = { version = "0.1", optional = true }
+
+# Jemalloc
+jemallocator = { version = "0.3", optional = true }

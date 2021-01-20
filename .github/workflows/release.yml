@@ -28,7 +28,7 @@ jobs:
           args: --release --target=x86_64-unknown-linux-musl
       - name: Generate changelog
         id: changelog
-        uses: scottbrenner/generate-changelog-action@v1
+        uses: scottbrenner/generate-changelog-action@master
       - name: Create release
         id: release
         uses: actions/create-release@v1

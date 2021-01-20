@@ -1,7 +1,7 @@
 use std::{
     convert::Infallible,
     error::Error,
-    future::ready,
+    future::{ready, Future},
     iter::{empty, Empty},
     marker::PhantomData,
     sync::Arc,
@@ -18,7 +18,6 @@ use uuid::Uuid;
 use crate::db::HandlerDatabase;
 
 /// Recognition driver, that allows to use different speech-to-text services
-#[async_trait::async_trait]
 pub trait RecognitionDriver<S>: Send + Sync
 where
     S: Stream<Item = Vec<u8>> + Send + Sync + 'static,
@@ -35,8 +34,11 @@ where
     /// wrap [`Self::Item`] in [`Result`].
     type Error: Error + Send + Sync + Unpin;
 
+    /// Returned future.
+    type Fut: Future<Output = Result<Self::Ok, Self::Error>> + Send;
+
     /// Start process of audio streaming.
-    async fn stream(&self, stream: S) -> Result<Self::Ok, Self::Error>;
+    fn stream(self, stream: S) -> Self::Fut;
 }
 
 /// An empty driver implementation, that can be used to silence missing driver type
@@ -57,7 +59,6 @@ impl<I> DummyDriver<I> {
     }
 }
 
-#[async_trait::async_trait]
 impl<I, S> RecognitionDriver<S> for DummyDriver<I>
 where
     I: Send + Sync,
@@ -69,8 +70,10 @@ where
 
     type Error = Infallible;
 
-    async fn stream(&self, _: S) -> Result<Self::Ok, Self::Error> {
-        Ok(iter(empty()))
+    type Fut = impl Future<Output = Result<Self::Ok, Self::Error>>;
+
+    fn stream(self, _: S) -> Self::Fut {
+        ready(Ok(iter(empty())))
     }
 }
 

@@ -1,10 +1,12 @@
+use std::future::Future;
+
 use await_time::AwaitTime;
-use futures_util::stream::{once, Map, Stream, StreamExt};
+use futures_util::stream::{once, Stream, StreamExt};
 use thiserror::Error;
 use tonic::{
     metadata::{errors::InvalidMetadataValue, MetadataValue},
     transport::{Certificate, Channel, ClientTlsConfig, Error as TransportError},
-    Request, Status, Streaming,
+    Request, Status,
 };
 use tracing::warn;
 use yup_oauth2::AccessToken;
@@ -13,7 +15,7 @@ use crate::{
     gcs::codegen::{
         recognition_config::AudioEncoding, speech_client::SpeechClient,
         streaming_recognize_request::StreamingRequest, RecognitionConfig,
-        StreamingRecognitionConfig, StreamingRecognizeRequest, StreamingRecognizeResponse,
+        StreamingRecognitionConfig, StreamingRecognizeRequest,
     },
     recognition::RecognitionDriver,
 };
@@ -92,62 +94,60 @@ impl GoogleCloudSpeech {
     }
 }
 
-#[async_trait::async_trait]
 impl<S> RecognitionDriver<S> for GoogleCloudSpeech
 where
     S: Stream<Item = Vec<u8>> + Send + Sync + 'static,
 {
     type Item = Result<Option<String>, Self::Error>;
 
-    #[allow(clippy::type_complexity)]
-    type Ok = Map<
-        Streaming<StreamingRecognizeResponse>,
-        fn(Result<StreamingRecognizeResponse, Status>) -> Result<Option<String>, Self::Error>,
-    >;
+    type Ok = impl Stream<Item = Self::Item>;
 
     type Error = CloudSpeechError;
 
-    async fn stream(&self, stream: S) -> Result<Self::Ok, Self::Error> {
-        let tls_config = ClientTlsConfig::new()
-            .ca_certificate(Certificate::from_pem(CERTS))
-            .domain_name(DOMAIN_NAME);
+    type Fut = impl Future<Output = Result<Self::Ok, Self::Error>>;
 
-        let channel = Channel::from_static(ENDPOINT)
-            .tls_config(tls_config)?
-            .connect()
-            .await?;
+    fn stream(self, stream: S) -> Self::Fut {
+        async move {
+            let tls_config = ClientTlsConfig::new()
+                .ca_certificate(Certificate::from_pem(CERTS))
+                .domain_name(DOMAIN_NAME);
 
-        let oauth_key = MetadataValue::from_str(&format!("Bearer {}", self.token.as_str()))?;
+            let channel = Channel::from_static(ENDPOINT)
+                .tls_config(tls_config)?
+                .connect()
+                .await?;
 
-        let mut speech = SpeechClient::with_interceptor(channel, move |mut req: Request<()>| {
-            req.metadata_mut()
-                .insert("authorization", oauth_key.clone());
+            let oauth_key = MetadataValue::from_str(&format!("Bearer {}", self.token.as_str()))?;
 
-            Ok(req)
-        });
+            let mut speech = SpeechClient::with_interceptor(channel, move |mut req: Request<()>| {
+                req.metadata_mut()
+                    .insert("authorization", oauth_key.clone());
 
-        let streaming_config = StreamingRequest::StreamingConfig(StreamingRecognitionConfig {
-            config: Some(RecognitionConfig {
-                encoding: AudioEncoding::Linear16.into(),
-                sample_rate_hertz: 8000,
-                audio_channel_count: 1,
-                enable_separate_recognition_per_channel: false,
-                language_code: String::from("ru-RU"),
-                max_alternatives: 1,
-                profanity_filter: false,
-                speech_contexts: Vec::new(),
-                enable_word_time_offsets: false,
-                enable_automatic_punctuation: false,
-                diarization_config: None,
-                metadata: None,
-                model: String::from("phone_call"),
-                use_enhanced: false,
-            }),
-            single_utterance: false,
-            interim_results: true,
-        });
+                Ok(req)
+            });
 
-        let stream = speech
+            let streaming_config = StreamingRequest::StreamingConfig(StreamingRecognitionConfig {
+                config: Some(RecognitionConfig {
+                    encoding: AudioEncoding::Linear16.into(),
+                    sample_rate_hertz: 8000,
+                    audio_channel_count: 1,
+                    enable_separate_recognition_per_channel: false,
+                    language_code: String::from("ru-RU"),
+                    max_alternatives: 1,
+                    profanity_filter: false,
+                    speech_contexts: Vec::new(),
+                    enable_word_time_offsets: false,
+                    enable_automatic_punctuation: false,
+                    diarization_config: None,
+                    metadata: None,
+                    model: String::from("phone_call"),
+                    use_enhanced: false,
+                }),
+                single_utterance: false,
+                interim_results: true,
+            });
+
+            let stream = speech
             .streaming_recognize(
                 tokio_stream::StreamExt::timeout(once(async move {
                     StreamingRecognizeRequest {
@@ -172,19 +172,20 @@ where
             )
             .await?;
 
-        Ok(stream.into_inner().map(|response| {
-            response
-                .map(|mut response| {
-                    response
-                        .results
-                        .iter_mut()
-                        .filter(|result| result.is_final)
-                        .map(|result| result.alternatives.pop())
-                        .next()
-                        .flatten()
-                        .map(|alternative| alternative.transcript)
-                })
-                .map_err(CloudSpeechError::from)
-        }))
+            Ok(stream.into_inner().map(|response| {
+                response
+                    .map(|mut response| {
+                        response
+                            .results
+                            .iter_mut()
+                            .filter(|result| result.is_final)
+                            .map(|result| result.alternatives.pop())
+                            .next()
+                            .flatten()
+                            .map(|alternative| alternative.transcript)
+                    })
+                    .map_err(CloudSpeechError::from)
+            }))
+        }
     }
 }

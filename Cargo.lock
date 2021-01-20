@@ -274,7 +274,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "argh",
- "async-trait",
  "audiosocket",
  "dashmap",
  "deadqueue",

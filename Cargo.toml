@@ -19,7 +19,6 @@ jemalloc = ["jemallocator"]
 [dependencies]
 anyhow = { version = "1" }
 argh = { version = "0.1" }
-async-trait = { version = "0.1" }
 audiosocket = { version = "0.4" }
 dashmap = { version = "4" }
 deadqueue = { version = "0.2" }

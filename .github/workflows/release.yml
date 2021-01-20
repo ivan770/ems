@@ -46,3 +46,4 @@ jobs:
           upload_url: ${{ steps.release.outputs.upload_url }}
           asset_path: ./target/x86_64-unknown-linux-musl/release/ems
           asset_name: ems-x86_64-unknown-linux-musl
+          asset_content_type: application/octet-stream

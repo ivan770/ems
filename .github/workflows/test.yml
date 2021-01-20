@@ -23,6 +23,7 @@ jobs:
           toolchain: nightly
           target: x86_64-unknown-linux-musl
           components: rustfmt, clippy
+          override: true
       - name: Run clippy
         uses: actions-rs/cargo@v1
         with:
@@ -50,6 +51,7 @@ jobs:
           toolchain: nightly
           target: x86_64-unknown-linux-musl
           components: rustfmt, clippy
+          override: true
       - name: Run clippy
         uses: actions-rs/cargo@v1
         with:

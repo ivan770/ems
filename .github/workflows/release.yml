@@ -7,7 +7,7 @@ on:
 
 jobs:
   linux-musl:
-    name: Linux with all features
+    name: Linux with default features
     runs-on: ubuntu-latest
     steps:
       - name: Prepare musl-tools
@@ -28,9 +28,7 @@ jobs:
           args: --release --target=x86_64-unknown-linux-musl
       - name: Generate changelog
         id: changelog
-        uses: heinrichreimer/github-changelog-generator-action@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        uses: scottbrenner/generate-changelog-action@v1
       - name: Create release
         id: release
         uses: actions/create-release@v1

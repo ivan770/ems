@@ -27,7 +27,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --all-features -D clippy::all --deny warnings
+          args: --all-features -- -D clippy::all --deny warnings
       - name: Check code style
         uses: actions-rs/cargo@v1
         with:
@@ -54,7 +54,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --no-default-features -D clippy::all --deny warnings
+          args: --no-default-features -- -D clippy::all --deny warnings
       - name: Check code style
         uses: actions-rs/cargo@v1
         with:

@@ -33,7 +33,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fmt
-          args: --check
+          args: -- --check
       - name: Run tests
         uses: actions-rs/cargo@v1
         with:
@@ -61,7 +61,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fmt
-          args: --check
+          args: -- --check
       - name: Run tests
         uses: actions-rs/cargo@v1
         with:

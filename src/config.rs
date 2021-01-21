@@ -32,8 +32,8 @@ pub enum SpeechRecognitionDriver {
 #[derive(Error, Debug)]
 pub enum ConfigError {
     /// Config was not found using specified path (or using a default one).
-    #[error("Config file cannot be loaded: {0}")]
-    ConfigNotFound(#[from] IoError),
+    #[error("Config file ({0}) cannot be loaded: {1}")]
+    ConfigNotFound(PathBuf, IoError),
 
     /// File by provided path does not contain a valid configuration.
     #[error("Malformed config file: {0}")]
@@ -78,7 +78,9 @@ impl TryFrom<Cli> for Config {
     type Error = ConfigError;
 
     fn try_from(value: Cli) -> Result<Self, Self::Error> {
-        Ok(from_slice(&read(value.config)?)?)
+        Ok(from_slice(&read(&value.config).map_err(|e| {
+            ConfigError::ConfigNotFound(value.config, e)
+        })?)?)
     }
 }
 

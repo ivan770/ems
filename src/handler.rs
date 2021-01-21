@@ -142,7 +142,7 @@ where
     /// Listen for incoming messages from [`MessageStream`], and execute [`MessageHandlerAction`] events.
     #[instrument(skip(self), err, name = "id_listen", fields(id = %self.id))]
     pub async fn listen(mut self, max_time: Duration) -> Result<(), ServerError> {
-        try_join!(
+        let result = try_join!(
             Self::handle_messages(
                 self.id,
                 &self.database,
@@ -151,9 +151,12 @@ where
                 max_time
             ),
             Self::action_listen(&self.channel, self.sink)
-        )?;
+        );
 
-        Ok(())
+        match result {
+            Ok(_) | Err(ServerError::ClientDisconnected(_)) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     /// Listen for incoming AudioSocket messages.
@@ -186,8 +189,7 @@ where
                         || e.kind() == ErrorKind::UnexpectedEof
                         || e.kind() == ErrorKind::ConnectionReset =>
                 {
-                    debug!("AudioSocket connection closed");
-                    break;
+                    return Err(ServerError::ClientDisconnected(e));
                 }
                 (Err(e), _) => return Err(e),
                 _ => {}
@@ -236,6 +238,8 @@ where
     }
 }
 
+// TODO: Check if we are closing connection gracefully, as debug logs
+// don't show GoAway packages when shutting down server.
 impl<'s, ST, SI, D> Drop for IdentifiableMessageHandler<'s, ST, SI, D> {
     fn drop(&mut self) {
         self.database.remove_handler(self.id);

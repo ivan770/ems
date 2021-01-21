@@ -45,6 +45,11 @@ impl HandlerDatabase {
     pub fn send(&self, id: &Uuid, action: MessageHandlerAction) -> Option<()> {
         self.handler_map.get(id)?.send(action).ok()
     }
+
+    /// Check if there are no active handlers in database.
+    pub fn is_empty(&self) -> bool {
+        self.handler_map.is_empty()
+    }
 }
 
 #[cfg(test)]

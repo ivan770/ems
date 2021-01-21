@@ -39,6 +39,9 @@ pub enum ServerError {
     #[error("Exceeded max await time for next AudioSocket message: {0}")]
     TimeoutError(#[from] Elapsed),
 
+    #[error("Connection was closed by client: {0}")]
+    ClientDisconnected(IoError),
+
     #[cfg(feature = "gcs")]
     #[error("Authentication error: {0}")]
     AuthError(#[from] AuthError),

@@ -15,7 +15,8 @@ use config::{Cli, Config};
 use db::HandlerDatabase;
 use once_cell::sync::OnceCell;
 use server::AudioSocketServer;
-use tokio::try_join;
+use shutdown::Shutdown;
+use tokio::signal::ctrl_c;
 use tracing::subscriber::set_global_default;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use ws::WsServer;
@@ -48,6 +49,9 @@ mod recognition;
 /// WebSocket server, that works as a bridge between EMS and clients.
 mod ws;
 
+/// Graceful shutdown for calls
+mod shutdown;
+
 /// AsyncRead wrapper for receiving messages.
 pub mod stream;
 
@@ -67,10 +71,19 @@ async fn main() -> Result<()> {
 
     let config = CONFIG.get().expect("Config was not set previously");
 
-    try_join!(
-        WsServer::new(config, database.clone()).listen(),
-        AudioSocketServer::new(config, database).listen()
-    )?;
+    tokio::select! {
+        audiosocket_res = AudioSocketServer::new(config, database.clone()).listen() => {
+            audiosocket_res?;
+        }
+        ws_res = WsServer::new(config, database.clone()).listen() => {
+            ws_res?;
+        },
+        signal_res = ctrl_c() => {
+            signal_res?;
+        }
+    };
+
+    Shutdown::from(database.as_ref()).await;
 
     Ok(())
 }

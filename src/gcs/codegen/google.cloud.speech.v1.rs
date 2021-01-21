@@ -314,7 +314,7 @@ pub struct RecognitionMetadata {
     /// The industry vertical to which this speech recognition request most
     /// closely applies. This is most indicative of the topics contained
     /// in the audio.  Use the 6-digit NAICS code to identify the industry
-    /// vertical - see https://www.naics.com/search/.
+    /// vertical - see <https://www.naics.com/search/>.
     #[prost(uint32, tag = "3")]
     pub industry_naics_code_of_audio: u32,
     /// The audio type that most closely describes the audio being recognized.
@@ -334,7 +334,7 @@ pub struct RecognitionMetadata {
     /// Mime type of the original audio file.  For example `audio/m4a`,
     /// `audio/x-alaw-basic`, `audio/mp3`, `audio/3gpp`.
     /// A list of possible audio mime types is maintained at
-    /// http://www.iana.org/assignments/media-types/media-types.xhtml#audio
+    /// <http://www.iana.org/assignments/media-types/media-types.xhtml#audio>
     #[prost(string, tag = "8")]
     pub original_mime_type: std::string::String,
     /// Description of the content. Eg. "Recordings of federal supreme court

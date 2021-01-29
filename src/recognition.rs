@@ -17,6 +17,8 @@ pub struct SpeechRecognitionSink<E> {
 }
 
 impl<E> SpeechRecognitionSink<E> {
+    // We'll allow dead_code here to pass clippy test without default features
+    #[allow(dead_code)]
     pub fn new(id: Uuid, database: Arc<HandlerDatabase>) -> Self {
         Self {
             id,

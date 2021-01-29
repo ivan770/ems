@@ -1,24 +1,28 @@
 use std::{error::Error, future::Future, sync::Arc};
 
-use flume::{unbounded, Sender};
+use flume::Sender;
 use from_config::FromConfig;
 use futures_util::{
     sink::Sink,
     stream::{Stream, TryStream},
     StreamExt, TryStreamExt,
 };
-use tokio::spawn;
 use tracing::instrument;
 use uuid::Uuid;
 
+use crate::{config::Config, db::HandlerDatabase};
+
+#[cfg(feature = "gcs")]
 use crate::{
-    config::{Config, SpeechRecognitionDriver},
-    db::HandlerDatabase,
+    config::SpeechRecognitionDriver, gcs::driver::GoogleCloudSpeech,
     recognition::SpeechRecognitionSink,
 };
 
 #[cfg(feature = "gcs")]
-use crate::gcs::driver::GoogleCloudSpeech;
+use flume::unbounded;
+
+#[cfg(feature = "gcs")]
+use tokio::spawn;
 
 /// FromConfig trait.
 pub mod from_config;
@@ -53,6 +57,9 @@ where
     fn stream(self, stream: S) -> Self::Fut;
 }
 
+// Same as in crate::recognition, we silence dead_code here to pass clippy tests
+// without default features
+#[allow(dead_code)]
 pub struct ServiceSpawner<'c> {
     id: Uuid,
     config: &'c Config,
@@ -115,6 +122,8 @@ impl ServiceSpawner<'static> {
 
                 Some(SpawnedSpeechRecognition::new(bytes_sender))
             }
+            #[cfg(not(feature = "gcs"))]
+            Some(_) => None,
             None => None,
         };
 
@@ -127,6 +136,7 @@ pub struct SpawnedSpeechRecognition {
 }
 
 impl SpawnedSpeechRecognition {
+    #[allow(dead_code)]
     fn new(sender: Sender<Vec<u8>>) -> Self {
         Self { sender }
     }

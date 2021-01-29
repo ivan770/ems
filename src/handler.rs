@@ -1,10 +1,7 @@
 use std::{convert::TryInto, io::ErrorKind, sync::Arc, time::Duration};
 
 use audiosocket::Message;
-use flume::{
-    r#async::{RecvStream, SendSink},
-    unbounded, Receiver,
-};
+use flume::{unbounded, Receiver};
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt},
     try_join,
@@ -13,43 +10,37 @@ use tracing::{debug, instrument, warn};
 use uuid::Uuid;
 
 use crate::{
+    config::Config,
     db::HandlerDatabase,
-    recognition::{DispatchedSpeechRecognition, RecognitionDriver, SpeechRecognition},
     server::ServerError,
+    service::{ServiceSpawner, SpawnedSpeechRecognition},
     stream::MessageStream,
 };
 
 /// Message handler, that doesn't have any unique identifier.
 ///
 /// Ignores all messages, until upgraded to [`IdentifiableMessageHandler`].
-pub struct AnonymousMessageHandler<'s, ST, SI, D> {
+pub struct AnonymousMessageHandler<'c, 's, ST, SI> {
+    config: &'c Config,
     database: Arc<HandlerDatabase>,
     stream: MessageStream<'s, ST>,
     sink: &'s mut SI,
-    recognition_driver: Option<D>,
 }
 
-impl<'s, ST, SI, D> AnonymousMessageHandler<'s, ST, SI, D>
+impl<'s, ST, SI> AnonymousMessageHandler<'static, 's, ST, SI>
 where
     ST: AsyncRead + Unpin,
     SI: AsyncWrite + Unpin,
-    D: RecognitionDriver<
-            RecvStream<'static, Vec<u8>>,
-            Item = Result<
-                Option<String>,
-                <D as RecognitionDriver<RecvStream<'static, Vec<u8>>>>::Error,
-            >,
-        > + 'static,
 {
     pub fn new(
+        config: &'static Config,
         database: Arc<HandlerDatabase>,
         stream: MessageStream<'s, ST>,
         sink: &'s mut SI,
-        recognition_driver: Option<D>,
     ) -> Self {
         AnonymousMessageHandler {
+            config,
             database,
-            recognition_driver,
             stream,
             sink,
         }
@@ -74,14 +65,8 @@ where
     }
 
     /// Upgrade [`AnonymousMessageHandler`] to [`IdentifiableMessageHandler`]
-    fn upgrade(self, id: Uuid) -> IdentifiableMessageHandler<'s, ST, SI, D> {
-        IdentifiableMessageHandler::new(
-            id,
-            self.stream,
-            self.database,
-            self.sink,
-            self.recognition_driver,
-        )
+    fn upgrade(self, id: Uuid) -> IdentifiableMessageHandler<'static, 's, ST, SI> {
+        IdentifiableMessageHandler::new(id, self.config, self.stream, self.database, self.sink)
     }
 }
 
@@ -97,33 +82,26 @@ pub enum MessageHandlerAction {
 /// Message handler, that has a unique identifier attached.
 ///
 /// Listens for all messages, and drives connection event loop.
-pub struct IdentifiableMessageHandler<'s, ST, SI, D> {
+pub struct IdentifiableMessageHandler<'c, 's, ST, SI> {
     id: Uuid,
+    config: &'c Config,
     channel: Receiver<MessageHandlerAction>,
     database: Arc<HandlerDatabase>,
     stream: MessageStream<'s, ST>,
     sink: &'s mut SI,
-    recognition_driver: Option<D>,
 }
 
-impl<'s, ST, SI, D> IdentifiableMessageHandler<'s, ST, SI, D>
+impl<'s, ST, SI> IdentifiableMessageHandler<'static, 's, ST, SI>
 where
     ST: AsyncRead + Unpin,
     SI: AsyncWrite + Unpin + 's,
-    D: RecognitionDriver<
-            RecvStream<'static, Vec<u8>>,
-            Item = Result<
-                Option<String>,
-                <D as RecognitionDriver<RecvStream<'static, Vec<u8>>>>::Error,
-            >,
-        > + 'static,
 {
     fn new(
         id: Uuid,
+        config: &'static Config,
         stream: MessageStream<'s, ST>,
         database: Arc<HandlerDatabase>,
         sink: &'s mut SI,
-        recognition_driver: Option<D>,
     ) -> Self {
         let (sender, receiver) = unbounded();
 
@@ -131,11 +109,11 @@ where
 
         IdentifiableMessageHandler {
             id,
+            config,
             channel: receiver,
             database,
             stream,
             sink,
-            recognition_driver,
         }
     }
 
@@ -145,9 +123,9 @@ where
         let result = try_join!(
             Self::handle_messages(
                 self.id,
+                self.config,
                 &self.database,
                 &mut self.stream,
-                &mut self.recognition_driver,
                 max_time
             ),
             Self::action_listen(&self.channel, self.sink)
@@ -160,25 +138,22 @@ where
     }
 
     /// Listen for incoming AudioSocket messages.
-    async fn handle_messages(
+    async fn handle_messages<'a>(
         id: Uuid,
-        database: &Arc<HandlerDatabase>,
-        stream: &mut MessageStream<'s, ST>,
-        recognition_driver: &mut Option<D>,
+        config: &'static Config,
+        database: &'a Arc<HandlerDatabase>,
+        stream: &'a mut MessageStream<'s, ST>,
         max_time: Duration,
     ) -> Result<(), ServerError> {
-        // `take` here is actually not necessary, but is used to silence compiler because of Drop impl.
-        let mut recognition_driver = recognition_driver
-            .take()
-            .map(|driver| Self::prepare_audio_sender(id, database.clone(), driver));
+        let (recognition,) = Self::prepare_services(id, config, database.clone());
 
         loop {
-            match (stream.recv(max_time).await, recognition_driver.as_mut()) {
+            match (stream.recv(max_time).await, recognition.as_ref()) {
                 (Ok(Message::Identifier(_)), _) => {
                     warn!("Received identifier message on identified message handler")
                 }
                 (Ok(Message::Audio(Some(audio))), Some(dispatched)) => {
-                    dispatched.send(audio.to_vec()).await;
+                    dispatched.send(audio.to_vec());
                 }
                 (Ok(Message::Terminate), _) => {
                     debug!("Obtained termination message");
@@ -220,27 +195,18 @@ where
         Ok(())
     }
 
-    fn prepare_audio_sender(
+    fn prepare_services(
         id: Uuid,
+        config: &'static Config,
         database: Arc<HandlerDatabase>,
-        recognition_driver: D,
-    ) -> DispatchedSpeechRecognition<SendSink<'static, Vec<u8>>> {
-        let (sender, receiver) = unbounded();
-
-        SpeechRecognition::new(
-            id,
-            database,
-            sender.into_sink(),
-            receiver.into_stream(),
-            recognition_driver,
-        )
-        .spawn()
+    ) -> (Option<SpawnedSpeechRecognition>,) {
+        ServiceSpawner::new(id, config, database).spawn_from_config()
     }
 }
 
 // TODO: Check if we are closing connection gracefully, as debug logs
 // don't show GoAway packages when shutting down server.
-impl<'s, ST, SI, D> Drop for IdentifiableMessageHandler<'s, ST, SI, D> {
+impl<'c, 's, ST, SI> Drop for IdentifiableMessageHandler<'c, 's, ST, SI> {
     fn drop(&mut self) {
         self.database.remove_handler(self.id);
     }

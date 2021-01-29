@@ -1,7 +1,11 @@
-use std::future::Future;
+use std::{
+    future::{ready, Future},
+    io::Error as IoError,
+};
 
 use await_time::AwaitTime;
-use futures_util::stream::{once, Stream, StreamExt};
+use flume::SendError;
+use futures_util::stream::{once, Stream, StreamExt, TryStreamExt};
 use thiserror::Error;
 use tonic::{
     metadata::{errors::InvalidMetadataValue, MetadataValue},
@@ -9,17 +13,21 @@ use tonic::{
     Request, Status,
 };
 use tracing::warn;
-use yup_oauth2::AccessToken;
+use yup_oauth2::{
+    read_service_account_key, AccessToken, Error as OauthError, ServiceAccountAuthenticator,
+};
 
 use crate::{
+    config::Config,
     gcs::codegen::{
         recognition_config::AudioEncoding, speech_client::SpeechClient,
         streaming_recognize_request::StreamingRequest, RecognitionConfig,
         StreamingRecognitionConfig, StreamingRecognizeRequest,
     },
-    recognition::RecognitionDriver,
+    service::{from_config::FromConfig, Service},
 };
 
+const AUTH_SCOPE: &str = "https://www.googleapis.com/auth/cloud-platform";
 const DOMAIN_NAME: &str = "speech.googleapis.com";
 const ENDPOINT: &str = "https://speech.googleapis.com";
 
@@ -27,14 +35,26 @@ const CERTS: &[u8] = include_bytes!("cert.pem");
 
 #[derive(Error, Debug)]
 pub enum CloudSpeechError {
+    #[error("Application config doesn't contain GCS settings")]
+    NoSuitableConfigFound,
+
     #[error("Transport error: {0}")]
     TransportError(#[from] TransportError),
+
+    #[error("IO error: {0}")]
+    IoError(#[from] IoError),
 
     #[error("Invalid OAuth key provided: {0}")]
     InvalidOauthKey(#[from] InvalidMetadataValue),
 
+    #[error("Authentication error: {0}")]
+    AuthenticationError(#[from] OauthError),
+
     #[error("Unable to call gRPC API: {0}")]
     CallError(#[from] Status),
+
+    #[error("Unable to send transcription to background service: {0}")]
+    FlumeError(#[from] SendError<String>),
 }
 
 pub mod await_time {
@@ -94,13 +114,15 @@ impl GoogleCloudSpeech {
     }
 }
 
-impl<S> RecognitionDriver<S> for GoogleCloudSpeech
+impl<S> Service<S> for GoogleCloudSpeech
 where
     S: Stream<Item = Vec<u8>> + Send + Sync + 'static,
 {
-    type Item = Result<Option<String>, Self::Error>;
+    type Input = Vec<u8>;
 
-    type Ok = impl Stream<Item = Self::Item>;
+    type Output = Result<String, Self::Error>;
+
+    type Ok = impl Stream<Item = Self::Output>;
 
     type Error = CloudSpeechError;
 
@@ -172,20 +194,59 @@ where
             )
             .await?;
 
-            Ok(stream.into_inner().map(|response| {
-                response
-                    .map(|mut response| {
-                        response
-                            .results
-                            .iter_mut()
-                            .filter(|result| result.is_final)
-                            .map(|result| result.alternatives.pop())
-                            .next()
-                            .flatten()
-                            .map(|alternative| alternative.transcript)
-                    })
-                    .map_err(CloudSpeechError::from)
-            }))
+            Ok(stream
+                .into_inner()
+                .try_filter_map(|mut response| {
+                    ready(Ok(response
+                        .results
+                        .iter_mut()
+                        .filter(|result| result.is_final)
+                        .map(|result| result.alternatives.pop())
+                        .next()
+                        .flatten()
+                        .map(|alternative| alternative.transcript)))
+                })
+                .map_err(CloudSpeechError::from))
+        }
+    }
+}
+
+impl<'c> FromConfig<'c> for GoogleCloudSpeech
+where
+    Self: Sized,
+{
+    type Error = CloudSpeechError;
+
+    type Fut = impl Future<Output = Result<Self, Self::Error>>;
+
+    fn from_config(config: &'c Config) -> Self::Fut {
+        async move {
+            let authenticator = ServiceAccountAuthenticator::builder(
+                read_service_account_key(
+                    &config
+                        .gcs_config()
+                        .as_ref()
+                        .ok_or(CloudSpeechError::NoSuitableConfigFound)?
+                        .service_account_path,
+                )
+                .await?,
+            )
+            .build()
+            .await?;
+
+            let access_token = authenticator.token(&[AUTH_SCOPE]).await?;
+
+            Ok(GoogleCloudSpeech::new(
+                config
+                    .gcs_config()
+                    .as_ref()
+                    .ok_or(CloudSpeechError::NoSuitableConfigFound)?
+                    .max_await_time
+                    .map(AwaitTime::new)
+                    .flatten()
+                    .unwrap_or_default(),
+                access_token,
+            ))
         }
     }
 }

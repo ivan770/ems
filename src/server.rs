@@ -1,8 +1,7 @@
-use std::{io::Error as IoError, sync::Arc, time::Duration};
+use std::{io::Error as IoError, sync::Arc};
 
 use audiosocket::AudioSocketError;
 
-use flume::r#async::RecvStream;
 use thiserror::Error;
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -12,21 +11,8 @@ use tokio::{
 use tracing::{error, info, instrument};
 
 use crate::{
-    config::Config,
-    db::HandlerDatabase,
-    handler::AnonymousMessageHandler,
-    recognition::{DummyDriver, RecognitionDriver},
-    stream::MessageStream,
+    config::Config, db::HandlerDatabase, handler::AnonymousMessageHandler, stream::MessageStream,
 };
-
-#[cfg(feature = "gcs")]
-use crate::{
-    config::SpeechRecognitionDriver,
-    gcs::driver::{await_time::AwaitTime, GoogleCloudSpeech},
-};
-
-#[cfg(feature = "gcs")]
-use yup_oauth2::{read_service_account_key, Error as AuthError, ServiceAccountAuthenticator};
 
 #[derive(Error, Debug)]
 pub enum ServerError {
@@ -41,10 +27,6 @@ pub enum ServerError {
 
     #[error("Connection was closed by client: {0}")]
     ClientDisconnected(IoError),
-
-    #[cfg(feature = "gcs")]
-    #[error("Authentication error: {0}")]
-    AuthError(#[from] AuthError),
 }
 
 pub struct AudioSocketServer<'c> {
@@ -80,74 +62,11 @@ impl AudioSocketServer<'static> {
 async fn handle_tcp(
     config: &'static Config,
     database: Arc<HandlerDatabase>,
-    stream: TcpStream,
-) -> Result<(), ServerError> {
-    match config.recognition_driver() {
-        #[cfg(feature = "gcs")]
-        Some(SpeechRecognitionDriver::GoogleCloudSpeech) => match config.gcs_config() {
-            Some(gcs_config) => {
-                let authenticator = ServiceAccountAuthenticator::builder(
-                    read_service_account_key(&gcs_config.service_account_path).await?,
-                )
-                .build()
-                .await?;
-
-                let driver = Some(GoogleCloudSpeech::new(
-                    gcs_config
-                        .max_await_time
-                        .map(AwaitTime::new)
-                        .flatten()
-                        .unwrap_or_default(),
-                    authenticator
-                        .token(&["https://www.googleapis.com/auth/cloud-platform"])
-                        .await?,
-                ));
-
-                handle_with_driver(database, config.message_timeout(), stream, driver).await?;
-            }
-            None => {
-                error!("Server started with GCS driver but without GCS config. Disabling speech recognition for this session");
-                handle_with_driver(
-                    database,
-                    config.message_timeout(),
-                    stream,
-                    DummyDriver::none(),
-                )
-                .await?;
-            }
-        },
-        _ => {
-            handle_with_driver(
-                database,
-                config.message_timeout(),
-                stream,
-                DummyDriver::none(),
-            )
-            .await?;
-        }
-    }
-
-    Ok(())
-}
-
-async fn handle_with_driver<D>(
-    database: Arc<HandlerDatabase>,
-    max_time: Duration,
     mut stream: TcpStream,
-    driver: Option<D>,
-) -> Result<(), ServerError>
-where
-    D: RecognitionDriver<
-            RecvStream<'static, Vec<u8>>,
-            Item = Result<
-                Option<String>,
-                <D as RecognitionDriver<RecvStream<'static, Vec<u8>>>>::Error,
-            >,
-        > + 'static,
-{
+) -> Result<(), ServerError> {
     let (mut read, mut write) = stream.split();
 
-    AnonymousMessageHandler::new(database, MessageStream::new(&mut read), &mut write, driver)
-        .listen(max_time)
+    AnonymousMessageHandler::new(config, database, MessageStream::new(&mut read), &mut write)
+        .listen(config.message_timeout())
         .await
 }

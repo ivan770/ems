@@ -52,6 +52,9 @@ mod ws;
 /// Graceful shutdown for calls
 mod shutdown;
 
+/// Various services, including speech recognition and voice synthesis.
+mod service;
+
 /// AsyncRead wrapper for receiving messages.
 pub mod stream;
 

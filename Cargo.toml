@@ -19,7 +19,7 @@ jemalloc = ["jemallocator"]
 [dependencies]
 anyhow = { version = "1" }
 argh = { version = "0.1" }
-audiosocket = { version = "0.4" }
+audiosocket = { version = "1" }
 dashmap = { version = "4" }
 deadqueue = { version = "0.2" }
 flume = { version = "0.10" }

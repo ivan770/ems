@@ -35,3 +35,37 @@ impl<'d> Future for Shutdown<'d> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{sync::Arc, time::Duration};
+
+    use flume::unbounded;
+    use tokio::time::sleep;
+    use uuid::Uuid;
+
+    use crate::db::HandlerDatabase;
+
+    use super::Shutdown;
+
+    #[tokio::test]
+    async fn test_shutdown_empty() {
+        let database = HandlerDatabase::default();
+        Shutdown::from(&database).await;
+    }
+
+    #[tokio::test]
+    async fn test_shutdown() {
+        let database = Arc::new(HandlerDatabase::default());
+
+        database.add_handler(Uuid::nil(), unbounded().0);
+
+        let db_clone = database.clone();
+        tokio::spawn(async move {
+            sleep(Duration::from_secs(1)).await;
+            db_clone.remove_handler(Uuid::nil());
+        });
+
+        Shutdown::from(database.as_ref()).await;
+    }
+}

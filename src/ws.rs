@@ -13,7 +13,7 @@ use tokio_tungstenite::{
     accept_async,
     tungstenite::{Error as TungsteniteError, Message},
 };
-use tracing::{error, info, instrument};
+use tracing::{debug, error, info, instrument};
 use uuid::Uuid;
 
 use crate::{config::Config, db::HandlerDatabase, handler::MessageHandlerAction};
@@ -92,8 +92,8 @@ async fn handle_ws(database: Arc<HandlerDatabase>, stream: TcpStream) {
 }
 
 /// Start accepting incoming messages on provided [`Stream`].
-#[instrument(skip(database, stream), err)]
-async fn accept_messages<S>(database: &HandlerDatabase, stream: S) -> Result<(), WsError>
+#[instrument(skip(database, stream))]
+async fn accept_messages<S>(database: &HandlerDatabase, stream: S)
 where
     S: Stream<Item = Result<Message, TungsteniteError>>,
 {
@@ -111,16 +111,17 @@ where
                 _ => Err(WsError::UnsupportedMessageType),
             }
         })
-        .try_for_each_concurrent(None, |message| async move {
-            if let WsAction::Hangup = message.data {
-                database.send(&message.id, MessageHandlerAction::Hangup);
+        .for_each_concurrent(None, |message| async move {
+            match message {
+                Ok(message) => {
+                    if let WsAction::Hangup = message.data {
+                        database.send(&message.id, MessageHandlerAction::Hangup);
+                    }
+                }
+                Err(e) => debug!(error = %e, "Invalid WebSocket message"),
             }
-
-            Ok(())
         })
-        .await?;
-
-    Ok(())
+        .await;
 }
 
 /// Start sending transcriptions to provided [`Sink`].
@@ -154,9 +155,10 @@ mod tests {
     use serde_json::from_str;
     use tokio::spawn;
     use tokio_tungstenite::tungstenite::Message;
+    use tracing_test::traced_test;
     use uuid::Uuid;
 
-    use super::{accept_messages, send_transcriptions, WsAction, WsMessage};
+    use super::{WsAction, WsMessage, accept_messages, send_transcriptions};
     use crate::{db::HandlerDatabase, handler::MessageHandlerAction};
 
     const TEST_ID: Uuid = Uuid::nil();
@@ -194,6 +196,30 @@ mod tests {
     }
 
     #[tokio::test]
+    #[traced_test]
+    async fn accept_invalid_ws_message() {
+        let stream = once(ready(Ok(Message::Text(format!(
+            r#"
+            {{
+                "id": "{}",
+                "data": "InvalidMessageData"
+            }}
+        "#,
+            TEST_ID
+        )))));
+
+        let database = HandlerDatabase::default();
+
+        let (sender, _) = unbounded();
+
+        database.add_handler(TEST_ID, sender);
+
+        accept_messages(&database, stream).await;
+
+        assert!(logs_contain("Invalid WebSocket message"));
+    }
+
+    #[tokio::test]
     async fn accept_ws_hangup() {
         let stream = once(ready(Ok(Message::Text(format!(
             r#"
@@ -211,7 +237,7 @@ mod tests {
 
         database.add_handler(TEST_ID, sender);
 
-        accept_messages(&database, stream).await.unwrap();
+        accept_messages(&database, stream).await;
 
         let recv = receiver.recv().unwrap();
 

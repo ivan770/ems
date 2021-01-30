@@ -71,6 +71,7 @@ where
 }
 
 /// Actions, that can be sent to [`IdentifiableMessageHandler`], including call hangup and audio playback.
+#[cfg_attr(test, derive(Debug))]
 pub enum MessageHandlerAction {
     /// Terminate connection.
     Hangup,

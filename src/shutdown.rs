@@ -44,9 +44,8 @@ mod tests {
     use tokio::time::sleep;
     use uuid::Uuid;
 
-    use crate::db::HandlerDatabase;
-
     use super::Shutdown;
+    use crate::db::HandlerDatabase;
 
     #[tokio::test]
     async fn test_shutdown_empty() {

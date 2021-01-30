@@ -18,18 +18,27 @@ use uuid::Uuid;
 
 use crate::{config::Config, db::HandlerDatabase, handler::MessageHandlerAction};
 
+/// Generic WebSocket message for both requests and responses.
 #[derive(Serialize, Deserialize)]
 struct WsMessage {
+    /// ID of handler, that has to receive request, or that sends response.
     id: Uuid,
+
+    /// Inner message data.
     data: WsAction,
 }
 
+/// WebSocket actions, that handler can send or execute.
 #[derive(Serialize, Deserialize)]
 enum WsAction {
+    /// Terminate current call.
     Hangup,
+
+    /// Speech transcription part of current call.
     Transcription(String),
 }
 
+/// Errors, that may happen during WebSocket connection.
 #[derive(Error, Debug)]
 enum WsError {
     #[error("Invalid message received: {0}")]
@@ -42,16 +51,19 @@ enum WsError {
     UnsupportedMessageType,
 }
 
+/// WebSocket server
 pub struct WsServer<'c> {
     config: &'c Config,
     database: Arc<HandlerDatabase>,
 }
 
 impl<'c> WsServer<'c> {
+    /// Create new WebSocket server from provided config and handler database.
     pub fn new(config: &'c Config, database: Arc<HandlerDatabase>) -> Self {
         Self { config, database }
     }
 
+    /// Start WebSocket server on host provided in config.
     #[instrument(skip(self))]
     pub async fn listen(self) -> Result<(), Error> {
         let listener = TcpListener::bind(self.config.websocket_addr()).await?;
@@ -69,6 +81,7 @@ impl<'c> WsServer<'c> {
     }
 }
 
+/// Handle new WebSocket connection.
 async fn handle_ws(database: Arc<HandlerDatabase>, stream: TcpStream) {
     let (sink, stream) = accept_async(stream).await.unwrap().split();
 
@@ -78,6 +91,7 @@ async fn handle_ws(database: Arc<HandlerDatabase>, stream: TcpStream) {
     );
 }
 
+/// Start accepting incoming messages on provided [`Stream`].
 #[instrument(skip(database, stream), err)]
 async fn accept_messages<S>(database: &HandlerDatabase, stream: S) -> Result<(), WsError>
 where
@@ -109,6 +123,7 @@ where
     Ok(())
 }
 
+/// Start sending transcriptions to provided [`Sink`].
 #[instrument(skip(database, sink), err)]
 async fn send_transcriptions<S>(database: &HandlerDatabase, mut sink: S) -> Result<(), WsError>
 where
@@ -141,9 +156,8 @@ mod tests {
     use tokio_tungstenite::tungstenite::Message;
     use uuid::Uuid;
 
-    use crate::{db::HandlerDatabase, handler::MessageHandlerAction};
-
     use super::{accept_messages, send_transcriptions, WsAction, WsMessage};
+    use crate::{db::HandlerDatabase, handler::MessageHandlerAction};
 
     const TEST_ID: Uuid = Uuid::nil();
 

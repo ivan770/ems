@@ -1,5 +1,7 @@
 use std::{error::Error, future::Future, sync::Arc};
 
+#[cfg(feature = "gcs")]
+use flume::unbounded;
 use flume::Sender;
 use from_config::FromConfig;
 use futures_util::{
@@ -7,22 +9,17 @@ use futures_util::{
     stream::{Stream, TryStream},
     StreamExt, TryStreamExt,
 };
+#[cfg(feature = "gcs")]
+use tokio::spawn;
 use tracing::instrument;
 use uuid::Uuid;
 
 use crate::{config::Config, db::HandlerDatabase};
-
 #[cfg(feature = "gcs")]
 use crate::{
     config::SpeechRecognitionDriver, gcs::driver::GoogleCloudSpeech,
     recognition::SpeechRecognitionSink,
 };
-
-#[cfg(feature = "gcs")]
-use flume::unbounded;
-
-#[cfg(feature = "gcs")]
-use tokio::spawn;
 
 /// FromConfig trait.
 pub mod from_config;
@@ -107,6 +104,9 @@ impl ServiceSpawner<'static> {
         Ok(())
     }
 
+    /// Spawn needed services from current application config.
+    ///
+    /// Some services require their own respective features to be enabled (`gcs` for Google Cloud Speech as an example).
     pub fn spawn_from_config(self) -> (Option<SpawnedSpeechRecognition>,) {
         let recognition = match self.config.recognition_driver() {
             #[cfg(feature = "gcs")]
@@ -131,16 +131,19 @@ impl ServiceSpawner<'static> {
     }
 }
 
+/// Active background speech recognition task
 pub struct SpawnedSpeechRecognition {
     sender: Sender<Vec<u8>>,
 }
 
 impl SpawnedSpeechRecognition {
+    /// Create new [`SpawnedSpeechRecognition`] from provided [`Sender`].
     #[allow(dead_code)]
     fn new(sender: Sender<Vec<u8>>) -> Self {
         Self { sender }
     }
 
+    /// Send new audio for recognition.
     pub fn send(&self, audio: Vec<u8>) {
         self.sender.send(audio).ok();
     }

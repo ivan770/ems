@@ -57,9 +57,8 @@ mod tests {
     use flume::unbounded;
     use uuid::Uuid;
 
-    use crate::handler::MessageHandlerAction;
-
     use super::HandlerDatabase;
+    use crate::handler::MessageHandlerAction;
 
     const TEST_ID: Uuid = Uuid::nil();
 

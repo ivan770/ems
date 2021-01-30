@@ -84,9 +84,8 @@ mod tests {
     use audiosocket::Message;
     use tokio::io::{AsyncRead, ReadBuf};
 
-    use crate::server::ServerError;
-
     use super::MessageStream;
+    use crate::server::ServerError;
 
     struct Pending;
 

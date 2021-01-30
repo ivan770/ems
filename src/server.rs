@@ -1,7 +1,6 @@
 use std::{io::Error as IoError, sync::Arc};
 
 use audiosocket::AudioSocketError;
-
 use thiserror::Error;
 use tokio::{
     net::{TcpListener, TcpStream},

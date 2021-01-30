@@ -158,7 +158,7 @@ mod tests {
     use tracing_test::traced_test;
     use uuid::Uuid;
 
-    use super::{WsAction, WsMessage, accept_messages, send_transcriptions};
+    use super::{accept_messages, send_transcriptions, WsAction, WsMessage};
     use crate::{db::HandlerDatabase, handler::MessageHandlerAction};
 
     const TEST_ID: Uuid = Uuid::nil();

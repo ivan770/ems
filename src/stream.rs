@@ -50,24 +50,13 @@ where
             warn!(%length, %read, "Expected payload length and actual payload length are different");
         }
 
-        // TODO: Replace with https://github.com/rust-lang/rust/pull/79299 on 1.50 release
-        if read == 0 {
-            Ok(RawMessage::from_parts(
-                message_type
-                    .try_into()
-                    .map_err(AudioSocketError::IncorrectMessageType)?,
-                None,
-            )
-            .try_into()?)
-        } else {
-            Ok(RawMessage::from_parts(
-                message_type
-                    .try_into()
-                    .map_err(AudioSocketError::IncorrectMessageType)?,
-                Some(&self.buf),
-            )
-            .try_into()?)
-        }
+        Ok(RawMessage::from_parts(
+            message_type
+                .try_into()
+                .map_err(AudioSocketError::IncorrectMessageType)?,
+            (read != 0).then(move || &*self.buf),
+        )
+        .try_into()?)
     }
 }
 

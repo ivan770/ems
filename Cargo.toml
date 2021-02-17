@@ -8,10 +8,13 @@ edition = "2018"
 lto = true
 
 [features]
-default = ["gcs"]
+default = ["gcs", "gctts"]
 
-# Add support for Google Cloud Speech recognition
+# Add support for Google Cloud Speech recognition service
 gcs = ["tonic", "prost", "prost-types", "yup-oauth2", "tokio-stream"]
+
+# Add support for Google Text-to-Speech service
+gctts = ["gcs", "async-stream", "hound"]
 
 # Enable jemalloc as default allocator
 jemalloc = ["jemallocator"]
@@ -25,6 +28,7 @@ deadqueue = { version = "0.2" }
 flume = { version = "0.10" }
 futures-util = { version = "0.3", features = ["sink"] }
 once_cell = { version = "1" }
+pin-project = { version = "1" }
 thiserror = { version = "1" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
@@ -35,6 +39,10 @@ tracing = { version = "0.1", features = ["attributes"] }
 tracing-futures = { version = "0.2" }
 tracing-subscriber = { version = "0.2" }
 uuid = { version = "0.8", features = ["serde"] }
+
+# GCTTS dependencies
+async-stream = { version = "0.3", optional = true }
+hound = { version = "3", optional = true }
 
 # GCS dependencies
 tonic = { version = "0.4", features = ["transport", "prost", "tls"], optional = true }

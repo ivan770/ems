@@ -18,20 +18,21 @@ use yup_oauth2::{
 };
 
 use crate::{
-    config::Config,
-    gcs::codegen::{
-        recognition_config::AudioEncoding, speech_client::SpeechClient,
-        streaming_recognize_request::StreamingRequest, RecognitionConfig,
-        StreamingRecognitionConfig, StreamingRecognizeRequest,
+    google::{
+        codegen::{
+            recognition_config::AudioEncoding, speech_client::SpeechClient,
+            streaming_recognize_request::StreamingRequest, RecognitionConfig,
+            StreamingRecognitionConfig, StreamingRecognizeRequest,
+        },
+        AUTH_SCOPE, CERTS,
     },
+    handler::CHUNK_SIZE,
+    recognition::{SpeechRecognitionConfig, SpeechRecognitionRequest, SpeechRecognitionResponse},
     service::{from_config::FromConfig, Service},
 };
 
-const AUTH_SCOPE: &str = "https://www.googleapis.com/auth/cloud-platform";
 const DOMAIN_NAME: &str = "speech.googleapis.com";
 const ENDPOINT: &str = "https://speech.googleapis.com";
-
-const CERTS: &[u8] = include_bytes!("cert.pem");
 
 #[derive(Error, Debug)]
 pub enum CloudSpeechError {
@@ -97,6 +98,17 @@ pub mod await_time {
 }
 
 pub struct GoogleCloudSpeech {
+    /// Language, that is being recognized.
+    ///
+    /// Consult <https://cloud.google.com/speech-to-text/docs/languages> for more info
+    language: String,
+
+    /// Text punctuation guessing toggle
+    punctuation: bool,
+
+    /// Profanity filter toggle
+    profanity_filter: bool,
+
     /// Max await time between each audio message.
     ///
     /// Check [`AwaitTime`] for details.
@@ -109,18 +121,30 @@ pub struct GoogleCloudSpeech {
 }
 
 impl GoogleCloudSpeech {
-    pub fn new(max_time: AwaitTime, token: AccessToken) -> Self {
-        Self { max_time, token }
+    pub fn new(
+        language: String,
+        punctuation: bool,
+        profanity_filter: bool,
+        max_time: AwaitTime,
+        token: AccessToken,
+    ) -> Self {
+        Self {
+            language,
+            punctuation,
+            profanity_filter,
+            max_time,
+            token,
+        }
     }
 }
 
 impl<S> Service<S> for GoogleCloudSpeech
 where
-    S: Stream<Item = Vec<u8>> + Send + Sync + 'static,
+    S: Stream<Item = SpeechRecognitionRequest> + Send + Sync + 'static,
 {
-    type Input = Vec<u8>;
+    type Input = SpeechRecognitionRequest;
 
-    type Output = Result<String, Self::Error>;
+    type Output = Result<SpeechRecognitionResponse, Self::Error>;
 
     type Ok = impl Stream<Item = Self::Output>;
 
@@ -154,12 +178,12 @@ where
                     sample_rate_hertz: 8000,
                     audio_channel_count: 1,
                     enable_separate_recognition_per_channel: false,
-                    language_code: String::from("ru-RU"),
+                    language_code: self.language,
                     max_alternatives: 1,
-                    profanity_filter: false,
+                    profanity_filter: self.profanity_filter,
                     speech_contexts: Vec::new(),
                     enable_word_time_offsets: false,
-                    enable_automatic_punctuation: false,
+                    enable_automatic_punctuation: self.punctuation,
                     diarization_config: None,
                     metadata: None,
                     model: String::from("phone_call"),
@@ -170,29 +194,29 @@ where
             });
 
             let stream = speech
-            .streaming_recognize(
-                tokio_stream::StreamExt::timeout(once(async move {
-                    StreamingRecognizeRequest {
-                        streaming_request: Some(streaming_config),
-                    }
-                })
-                .chain(stream.map(|audio| StreamingRecognizeRequest {
-                    streaming_request: Some(StreamingRequest::AudioContent(audio)),
-                })), *self.max_time.inner())
-                .map(|result| {
-                    match result {
-                        Ok(req) => req,
-                        Err(elapsed) => {
-                            warn!(error = %elapsed, "Max time elapsed while awaiting for next audio message for GCS");
+                .streaming_recognize(
+                    tokio_stream::StreamExt::timeout(once(async move {
+                        StreamingRecognizeRequest {
+                            streaming_request: Some(streaming_config),
+                        }
+                    })
+                    .chain(stream.map(|recognition_request| StreamingRecognizeRequest {
+                        streaming_request: Some(StreamingRequest::AudioContent(recognition_request.audio)),
+                    })), *self.max_time.inner())
+                    .map(|result| {
+                        match result {
+                            Ok(req) => req,
+                            Err(elapsed) => {
+                                warn!(error = %elapsed, "Max time elapsed while awaiting for next audio message for GCS");
 
-                            StreamingRecognizeRequest {
-                                streaming_request: Some(StreamingRequest::AudioContent(Vec::from([0; 320])))
+                                StreamingRecognizeRequest {
+                                    streaming_request: Some(StreamingRequest::AudioContent(Vec::from([0; CHUNK_SIZE])))
+                                }
                             }
                         }
-                    }
-                })
-            )
-            .await?;
+                    })
+                )
+                .await?;
 
             Ok(stream
                 .into_inner()
@@ -206,6 +230,7 @@ where
                         .flatten()
                         .map(|alternative| alternative.transcript)))
                 })
+                .map_ok(move |transcription| SpeechRecognitionResponse { transcription })
                 .map_err(CloudSpeechError::from))
         }
     }
@@ -215,15 +240,18 @@ impl<'c> FromConfig<'c> for GoogleCloudSpeech
 where
     Self: Sized,
 {
+    type Config = SpeechRecognitionConfig<'c>;
+
     type Error = CloudSpeechError;
 
     type Fut = impl Future<Output = Result<Self, Self::Error>>;
 
-    fn from_config(config: &'c Config) -> Self::Fut {
+    fn from_config(config: Self::Config) -> Self::Fut {
         async move {
             let authenticator = ServiceAccountAuthenticator::builder(
                 read_service_account_key(
                     &config
+                        .application_config
                         .gcs_config()
                         .as_ref()
                         .ok_or(CloudSpeechError::NoSuitableConfigFound)?
@@ -237,7 +265,11 @@ where
             let access_token = authenticator.token(&[AUTH_SCOPE]).await?;
 
             Ok(GoogleCloudSpeech::new(
+                config.language,
+                config.punctuation,
+                config.profanity_filter,
                 config
+                    .application_config
                     .gcs_config()
                     .as_ref()
                     .ok_or(CloudSpeechError::NoSuitableConfigFound)?

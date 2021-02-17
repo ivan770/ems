@@ -14,11 +14,16 @@ use tokio::spawn;
 use tracing::instrument;
 use uuid::Uuid;
 
-use crate::{config::Config, db::HandlerDatabase};
 #[cfg(feature = "gcs")]
 use crate::{
     config::SpeechRecognitionDriver, gcs::driver::GoogleCloudSpeech,
-    recognition::SpeechRecognitionSink,
+    gctts::driver::GoogleCloudTextToSpeech, recognition::SpeechRecognitionSink,
+};
+use crate::{
+    config::{Config, SpeechSynthesisDriver},
+    db::HandlerDatabase,
+    recognition::{SpeechRecognitionConfig, SpeechRecognitionRequest},
+    synthesis::{SpeechSynthesisRequest, SpeechSynthesisSink},
 };
 
 /// FromConfig trait.
@@ -30,7 +35,7 @@ pub mod from_config;
 /// responses is a service. You can take a look at speech recognition and synthesis implementation.
 pub trait Service<S>: Send + Sync
 where
-    S: Stream<Item = Self::Input> + Send + Sync + 'static,
+    S: Stream<Item = Self::Input>,
 {
     /// A request for service.
     type Input;
@@ -39,7 +44,7 @@ where
     type Output;
 
     /// A stream of responses, possibly with [`Result`] wrapping.
-    type Ok: Stream<Item = Self::Output> + Send + Sync + Unpin;
+    type Ok: Stream<Item = Self::Output>;
 
     /// An error, that may happen during initialization.
     ///
@@ -48,103 +53,125 @@ where
     type Error: Error + Send + Sync + Unpin;
 
     /// Returned future.
-    type Fut: Future<Output = Result<Self::Ok, Self::Error>> + Send;
+    type Fut: Future<Output = Result<Self::Ok, Self::Error>>;
 
     /// Start process of audio streaming.
     fn stream(self, stream: S) -> Self::Fut;
 }
 
-// Same as in crate::recognition, we silence dead_code here to pass clippy tests
-// without default features
-#[allow(dead_code)]
-pub struct ServiceSpawner<'c> {
+#[instrument(skip(config, stream, sink), err)]
+async fn spawn_service<C, I, O, S>(
+    config: C,
+    stream: I,
+    mut sink: O,
+) -> Result<(), <S as Service<I>>::Error>
+where
+    C: 'static,
+    I: Stream<Item = <S as Service<I>>::Input> + Send + Sync + 'static,
+    O: Sink<<<S as Service<I>>::Ok as TryStream>::Ok, Error = <S as Service<I>>::Error>
+        + Send
+        + Unpin,
+    S: Service<
+            I,
+            Output = Result<<<S as Service<I>>::Ok as TryStream>::Ok, <S as Service<I>>::Error>,
+        > + FromConfig<'static, Config = C>,
+    S::Ok: TryStream,
+    <S as Service<I>>::Error:
+        From<<S as FromConfig<'static>>::Error> + From<<S::Ok as TryStream>::Error>,
+{
+    S::from_config(config)
+        .await?
+        .stream(stream)
+        .await?
+        .map_err(<S as Service<I>>::Error::from)
+        .forward(&mut sink)
+        .await?;
+
+    Ok(())
+}
+
+/// Spawn needed services from current application config.
+///
+/// Some services require their own respective features to be enabled (`gcs` for Google Cloud Speech as an example).
+pub fn spawn_speech_recognition(
     id: Uuid,
-    config: &'c Config,
+    config: SpeechRecognitionConfig<'static>,
     database: Arc<HandlerDatabase>,
-}
+) -> Option<SpawnedSpeechRecognition> {
+    match config.application_config.recognition_driver() {
+        #[cfg(feature = "gcs")]
+        Some(SpeechRecognitionDriver::GoogleCloudSpeech) => {
+            let (bytes_sender, bytes_receiver) = unbounded();
+            let transcription_sink = SpeechRecognitionSink::new(id, database);
 
-impl<'c> ServiceSpawner<'c> {
-    pub fn new(id: Uuid, config: &'c Config, database: Arc<HandlerDatabase>) -> Self {
-        Self {
-            id,
-            config,
-            database,
+            spawn(spawn_service::<_, _, _, GoogleCloudSpeech>(
+                config,
+                bytes_receiver.into_stream(),
+                transcription_sink,
+            ));
+
+            Some(SpawnedSpeechRecognition::new(bytes_sender))
         }
+        #[cfg(not(feature = "gcs"))]
+        Some(_) => None,
+        None => None,
     }
 }
 
-impl ServiceSpawner<'static> {
-    #[instrument(skip(config, stream, sink), err)]
-    async fn spawn_service<I, O, S>(
-        config: &'static Config,
-        stream: I,
-        mut sink: O,
-    ) -> Result<(), <S as Service<I>>::Error>
-    where
-        I: Stream<Item = <S as Service<I>>::Input> + Send + Sync + 'static,
-        O: Sink<<<S as Service<I>>::Ok as TryStream>::Ok, Error = <S as Service<I>>::Error>
-            + Send
-            + Unpin,
-        S: Service<
-                I,
-                Output = Result<<<S as Service<I>>::Ok as TryStream>::Ok, <S as Service<I>>::Error>,
-            > + FromConfig<'static>,
-        S::Ok: TryStream,
-        <S as Service<I>>::Error:
-            From<<S as FromConfig<'static>>::Error> + From<<S::Ok as TryStream>::Error>,
-    {
-        S::from_config(config)
-            .await?
-            .stream(stream)
-            .await?
-            .map_err(<S as Service<I>>::Error::from)
-            .forward(&mut sink)
-            .await?;
+pub fn spawn_speech_synthesis(
+    config: &'static Config,
+    database: Arc<HandlerDatabase>,
+) -> Option<SpawnedSpeechSynthesis> {
+    match config.synthesis_driver() {
+        #[cfg(feature = "gctts")]
+        Some(SpeechSynthesisDriver::GoogleCloudTextToSpeech) => {
+            let (text_sender, text_receiver) = unbounded();
+            let synthesis_sink = SpeechSynthesisSink::new(database);
 
-        Ok(())
-    }
+            spawn(spawn_service::<_, _, _, GoogleCloudTextToSpeech>(
+                config,
+                text_receiver.into_stream(),
+                synthesis_sink,
+            ));
 
-    /// Spawn needed services from current application config.
-    ///
-    /// Some services require their own respective features to be enabled (`gcs` for Google Cloud Speech as an example).
-    pub fn spawn_from_config(self) -> (Option<SpawnedSpeechRecognition>,) {
-        let recognition = match self.config.recognition_driver() {
-            #[cfg(feature = "gcs")]
-            Some(SpeechRecognitionDriver::GoogleCloudSpeech) => {
-                let (bytes_sender, bytes_receiver) = unbounded();
-                let transcription_sink = SpeechRecognitionSink::new(self.id, self.database);
-
-                spawn(Self::spawn_service::<_, _, GoogleCloudSpeech>(
-                    self.config,
-                    bytes_receiver.into_stream(),
-                    transcription_sink,
-                ));
-
-                Some(SpawnedSpeechRecognition::new(bytes_sender))
-            }
-            #[cfg(not(feature = "gcs"))]
-            Some(_) => None,
-            None => None,
-        };
-
-        (recognition,)
+            Some(SpawnedSpeechSynthesis::new(text_sender))
+        }
+        #[cfg(not(feature = "gcs"))]
+        Some(_) => None,
+        None => None,
     }
 }
 
 /// Active background speech recognition task
 pub struct SpawnedSpeechRecognition {
-    sender: Sender<Vec<u8>>,
+    sender: Sender<SpeechRecognitionRequest>,
 }
 
 impl SpawnedSpeechRecognition {
     /// Create new [`SpawnedSpeechRecognition`] from provided [`Sender`].
     #[allow(dead_code)]
-    fn new(sender: Sender<Vec<u8>>) -> Self {
+    fn new(sender: Sender<SpeechRecognitionRequest>) -> Self {
         Self { sender }
     }
 
     /// Send new audio for recognition.
-    pub fn send(&self, audio: Vec<u8>) {
-        self.sender.send(audio).ok();
+    pub fn send(&self, request: SpeechRecognitionRequest) {
+        self.sender.send(request).ok();
+    }
+}
+
+pub struct SpawnedSpeechSynthesis {
+    sender: Sender<SpeechSynthesisRequest>,
+}
+
+impl SpawnedSpeechSynthesis {
+    /// Create new [`SpawnedSpeechRecognition`] from provided [`Sender`].
+    pub fn new(sender: Sender<SpeechSynthesisRequest>) -> Self {
+        Self { sender }
+    }
+
+    /// Send new text for speech synthesis.
+    pub fn send(&self, request: SpeechSynthesisRequest) {
+        self.sender.send(request).ok();
     }
 }

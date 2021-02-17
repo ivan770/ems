@@ -4,10 +4,10 @@ pub struct RecognizeRequest {
     /// Required. Provides information to the recognizer that specifies how to
     /// process the request.
     #[prost(message, optional, tag = "1")]
-    pub config: ::std::option::Option<RecognitionConfig>,
+    pub config: ::core::option::Option<RecognitionConfig>,
     /// Required. The audio data to be recognized.
     #[prost(message, optional, tag = "2")]
-    pub audio: ::std::option::Option<RecognitionAudio>,
+    pub audio: ::core::option::Option<RecognitionAudio>,
 }
 /// The top-level message sent by the client for the `LongRunningRecognize`
 /// method.
@@ -16,10 +16,10 @@ pub struct LongRunningRecognizeRequest {
     /// Required. Provides information to the recognizer that specifies how to
     /// process the request.
     #[prost(message, optional, tag = "1")]
-    pub config: ::std::option::Option<RecognitionConfig>,
+    pub config: ::core::option::Option<RecognitionConfig>,
     /// Required. The audio data to be recognized.
     #[prost(message, optional, tag = "2")]
-    pub audio: ::std::option::Option<RecognitionAudio>,
+    pub audio: ::core::option::Option<RecognitionAudio>,
 }
 /// The top-level message sent by the client for the `StreamingRecognize` method.
 /// Multiple `StreamingRecognizeRequest` messages are sent. The first message
@@ -30,8 +30,9 @@ pub struct LongRunningRecognizeRequest {
 pub struct StreamingRecognizeRequest {
     /// The streaming request, which is either a streaming config or audio content.
     #[prost(oneof = "streaming_recognize_request::StreamingRequest", tags = "1, 2")]
-    pub streaming_request: ::std::option::Option<streaming_recognize_request::StreamingRequest>,
+    pub streaming_request: ::core::option::Option<streaming_recognize_request::StreamingRequest>,
 }
+/// Nested message and enum types in `StreamingRecognizeRequest`.
 pub mod streaming_recognize_request {
     /// The streaming request, which is either a streaming config or audio content.
     #[derive(Clone, PartialEq, ::prost::Oneof)]
@@ -50,7 +51,7 @@ pub mod streaming_recognize_request {
         /// pure binary representation (not base64). See
         /// [content limits](https://cloud.google.com/speech-to-text/quotas#content).
         #[prost(bytes, tag = "2")]
-        AudioContent(std::vec::Vec<u8>),
+        AudioContent(::prost::alloc::vec::Vec<u8>),
     }
 }
 /// Provides information to the recognizer that specifies how to process the
@@ -60,7 +61,7 @@ pub struct StreamingRecognitionConfig {
     /// Required. Provides information to the recognizer that specifies how to
     /// process the request.
     #[prost(message, optional, tag = "1")]
-    pub config: ::std::option::Option<RecognitionConfig>,
+    pub config: ::core::option::Option<RecognitionConfig>,
     /// If `false` or omitted, the recognizer will perform continuous
     /// recognition (continuing to wait for and process audio even if the user
     /// pauses speaking) until the client closes the input stream (gRPC API) or
@@ -125,7 +126,7 @@ pub struct RecognitionConfig {
     /// Support](https://cloud.google.com/speech-to-text/docs/languages) for a list
     /// of the currently supported language codes.
     #[prost(string, tag = "3")]
-    pub language_code: std::string::String,
+    pub language_code: ::prost::alloc::string::String,
     /// Maximum number of recognition hypotheses to be returned.
     /// Specifically, the maximum number of `SpeechRecognitionAlternative` messages
     /// within each `SpeechRecognitionResult`.
@@ -146,7 +147,7 @@ pub struct RecognitionConfig {
     /// [speech
     /// adaptation](https://cloud.google.com/speech-to-text/docs/context-strength).
     #[prost(message, repeated, tag = "6")]
-    pub speech_contexts: ::std::vec::Vec<SpeechContext>,
+    pub speech_contexts: ::prost::alloc::vec::Vec<SpeechContext>,
     /// If `true`, the top result includes a list of words and
     /// the start and end time offsets (timestamps) for those words. If
     /// `false`, no word-level time offset information is returned. The default is
@@ -171,10 +172,10 @@ pub struct RecognitionConfig {
     /// For non-streaming requests, the diarization results will be provided only
     /// in the top alternative of the FINAL SpeechRecognitionResult.
     #[prost(message, optional, tag = "19")]
-    pub diarization_config: ::std::option::Option<SpeakerDiarizationConfig>,
+    pub diarization_config: ::core::option::Option<SpeakerDiarizationConfig>,
     /// Metadata regarding this request.
     #[prost(message, optional, tag = "9")]
-    pub metadata: ::std::option::Option<RecognitionMetadata>,
+    pub metadata: ::core::option::Option<RecognitionMetadata>,
     /// Which model to select for the given request. Select the model
     /// best suited to your domain to get best results. If a model is not
     /// explicitly specified, then we auto-select a model based on the parameters
@@ -208,7 +209,7 @@ pub struct RecognitionConfig {
     ///   </tr>
     /// </table>
     #[prost(string, tag = "13")]
-    pub model: std::string::String,
+    pub model: ::prost::alloc::string::String,
     /// Set to true to use an enhanced model for speech recognition.
     /// If `use_enhanced` is set to true and the `model` field is not set, then
     /// an appropriate enhanced model is chosen if an enhanced model exists for
@@ -220,6 +221,7 @@ pub struct RecognitionConfig {
     #[prost(bool, tag = "14")]
     pub use_enhanced: bool,
 }
+/// Nested message and enum types in `RecognitionConfig`.
 pub mod recognition_config {
     /// The encoding of the audio data sent in the request.
     ///
@@ -302,6 +304,7 @@ pub struct SpeakerDiarizationConfig {
     #[prost(int32, tag = "3")]
     pub max_speaker_count: i32,
     /// Unused.
+    #[deprecated]
     #[prost(int32, tag = "5")]
     pub speaker_tag: i32,
 }
@@ -314,7 +317,7 @@ pub struct RecognitionMetadata {
     /// The industry vertical to which this speech recognition request most
     /// closely applies. This is most indicative of the topics contained
     /// in the audio.  Use the 6-digit NAICS code to identify the industry
-    /// vertical - see <https://www.naics.com/search/>.
+    /// vertical - see https://www.naics.com/search/.
     #[prost(uint32, tag = "3")]
     pub industry_naics_code_of_audio: u32,
     /// The audio type that most closely describes the audio being recognized.
@@ -330,18 +333,19 @@ pub struct RecognitionMetadata {
     /// 'Polycom SoundStation IP 6000' or 'POTS' or 'VoIP' or
     /// 'Cardioid Microphone'.
     #[prost(string, tag = "7")]
-    pub recording_device_name: std::string::String,
+    pub recording_device_name: ::prost::alloc::string::String,
     /// Mime type of the original audio file.  For example `audio/m4a`,
     /// `audio/x-alaw-basic`, `audio/mp3`, `audio/3gpp`.
     /// A list of possible audio mime types is maintained at
-    /// <http://www.iana.org/assignments/media-types/media-types.xhtml#audio>
+    /// http://www.iana.org/assignments/media-types/media-types.xhtml#audio
     #[prost(string, tag = "8")]
-    pub original_mime_type: std::string::String,
+    pub original_mime_type: ::prost::alloc::string::String,
     /// Description of the content. Eg. "Recordings of federal supreme court
     /// hearings from 2012".
     #[prost(string, tag = "10")]
-    pub audio_topic: std::string::String,
+    pub audio_topic: ::prost::alloc::string::String,
 }
+/// Nested message and enum types in `RecognitionMetadata`.
 pub mod recognition_metadata {
     /// Use case categories that the audio recognition request can be described
     /// by.
@@ -437,7 +441,7 @@ pub struct SpeechContext {
     /// improves the likelihood of correctly transcribing audio that includes
     /// months.
     #[prost(string, repeated, tag = "1")]
-    pub phrases: ::std::vec::Vec<std::string::String>,
+    pub phrases: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// Contains audio data in the encoding specified in the `RecognitionConfig`.
 /// Either `content` or `uri` must be supplied. Supplying both or neither
@@ -448,8 +452,9 @@ pub struct RecognitionAudio {
     /// The audio source, which is either inline content or a Google Cloud
     /// Storage uri.
     #[prost(oneof = "recognition_audio::AudioSource", tags = "1, 2")]
-    pub audio_source: ::std::option::Option<recognition_audio::AudioSource>,
+    pub audio_source: ::core::option::Option<recognition_audio::AudioSource>,
 }
+/// Nested message and enum types in `RecognitionAudio`.
 pub mod recognition_audio {
     /// The audio source, which is either inline content or a Google Cloud
     /// Storage uri.
@@ -459,7 +464,7 @@ pub mod recognition_audio {
         /// `RecognitionConfig`. Note: as with all bytes fields, proto buffers use a
         /// pure binary representation, whereas JSON representations use base64.
         #[prost(bytes, tag = "1")]
-        Content(std::vec::Vec<u8>),
+        Content(::prost::alloc::vec::Vec<u8>),
         /// URI that points to a file that contains audio data bytes as specified in
         /// `RecognitionConfig`. The file must not be compressed (for example, gzip).
         /// Currently, only Google Cloud Storage URIs are
@@ -468,7 +473,7 @@ pub mod recognition_audio {
         /// [google.rpc.Code.INVALID_ARGUMENT][google.rpc.Code.INVALID_ARGUMENT]). For more information, see
         /// [Request URIs](https://cloud.google.com/storage/docs/reference-uris).
         #[prost(string, tag = "2")]
-        Uri(std::string::String),
+        Uri(::prost::alloc::string::String),
     }
 }
 /// The only message returned to the client by the `Recognize` method. It
@@ -479,7 +484,7 @@ pub struct RecognizeResponse {
     /// Sequential list of transcription results corresponding to
     /// sequential portions of audio.
     #[prost(message, repeated, tag = "2")]
-    pub results: ::std::vec::Vec<SpeechRecognitionResult>,
+    pub results: ::prost::alloc::vec::Vec<SpeechRecognitionResult>,
 }
 /// The only message returned to the client by the `LongRunningRecognize` method.
 /// It contains the result as zero or more sequential `SpeechRecognitionResult`
@@ -491,7 +496,7 @@ pub struct LongRunningRecognizeResponse {
     /// Sequential list of transcription results corresponding to
     /// sequential portions of audio.
     #[prost(message, repeated, tag = "2")]
-    pub results: ::std::vec::Vec<SpeechRecognitionResult>,
+    pub results: ::prost::alloc::vec::Vec<SpeechRecognitionResult>,
 }
 /// Describes the progress of a long-running `LongRunningRecognize` call. It is
 /// included in the `metadata` field of the `Operation` returned by the
@@ -504,10 +509,10 @@ pub struct LongRunningRecognizeMetadata {
     pub progress_percent: i32,
     /// Time when the request was received.
     #[prost(message, optional, tag = "2")]
-    pub start_time: ::std::option::Option<::prost_types::Timestamp>,
+    pub start_time: ::core::option::Option<::prost_types::Timestamp>,
     /// Time of the most recent processing update.
     #[prost(message, optional, tag = "3")]
-    pub last_update_time: ::std::option::Option<::prost_types::Timestamp>,
+    pub last_update_time: ::core::option::Option<::prost_types::Timestamp>,
 }
 /// `StreamingRecognizeResponse` is the only message returned to the client by
 /// `StreamingRecognize`. A series of zero or more `StreamingRecognizeResponse`
@@ -563,13 +568,13 @@ pub struct StreamingRecognizeResponse {
     /// If set, returns a [google.rpc.Status][google.rpc.Status] message that
     /// specifies the error for the operation.
     #[prost(message, optional, tag = "1")]
-    pub error: ::std::option::Option<super::rpc::Status>,
+    pub error: ::core::option::Option<super::rpc::Status>,
     /// This repeated list contains zero or more results that
     /// correspond to consecutive portions of the audio currently being processed.
     /// It contains zero or one `is_final=true` result (the newly settled portion),
     /// followed by zero or more `is_final=false` results (the interim results).
     #[prost(message, repeated, tag = "2")]
-    pub results: ::std::vec::Vec<StreamingRecognitionResult>,
+    pub results: ::prost::alloc::vec::Vec<StreamingRecognitionResult>,
     /// Indicates the type of speech event.
     #[prost(
         enumeration = "streaming_recognize_response::SpeechEventType",
@@ -577,6 +582,7 @@ pub struct StreamingRecognizeResponse {
     )]
     pub speech_event_type: i32,
 }
+/// Nested message and enum types in `StreamingRecognizeResponse`.
 pub mod streaming_recognize_response {
     /// Indicates the type of speech event.
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -603,7 +609,7 @@ pub struct StreamingRecognitionResult {
     /// These alternatives are ordered in terms of accuracy, with the top (first)
     /// alternative being the most probable, as ranked by the recognizer.
     #[prost(message, repeated, tag = "1")]
-    pub alternatives: ::std::vec::Vec<SpeechRecognitionAlternative>,
+    pub alternatives: ::prost::alloc::vec::Vec<SpeechRecognitionAlternative>,
     /// If `false`, this `StreamingRecognitionResult` represents an
     /// interim result that may change. If `true`, this is the final time the
     /// speech service will return this particular `StreamingRecognitionResult`,
@@ -621,7 +627,7 @@ pub struct StreamingRecognitionResult {
     /// Time offset of the end of this result relative to the
     /// beginning of the audio.
     #[prost(message, optional, tag = "4")]
-    pub result_end_time: ::std::option::Option<::prost_types::Duration>,
+    pub result_end_time: ::core::option::Option<::prost_types::Duration>,
     /// For multi-channel audio, this is the channel number corresponding to the
     /// recognized result for the audio from that channel.
     /// For audio_channel_count = N, its output values can range from '1' to 'N'.
@@ -631,7 +637,7 @@ pub struct StreamingRecognitionResult {
     /// the language in this result. This language code was detected to have the
     /// most likelihood of being spoken in the audio.
     #[prost(string, tag = "6")]
-    pub language_code: std::string::String,
+    pub language_code: ::prost::alloc::string::String,
 }
 /// A speech recognition result corresponding to a portion of the audio.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -641,7 +647,7 @@ pub struct SpeechRecognitionResult {
     /// These alternatives are ordered in terms of accuracy, with the top (first)
     /// alternative being the most probable, as ranked by the recognizer.
     #[prost(message, repeated, tag = "1")]
-    pub alternatives: ::std::vec::Vec<SpeechRecognitionAlternative>,
+    pub alternatives: ::prost::alloc::vec::Vec<SpeechRecognitionAlternative>,
     /// For multi-channel audio, this is the channel number corresponding to the
     /// recognized result for the audio from that channel.
     /// For audio_channel_count = N, its output values can range from '1' to 'N'.
@@ -653,7 +659,7 @@ pub struct SpeechRecognitionResult {
 pub struct SpeechRecognitionAlternative {
     /// Transcript text representing the words that the user spoke.
     #[prost(string, tag = "1")]
-    pub transcript: std::string::String,
+    pub transcript: ::prost::alloc::string::String,
     /// The confidence estimate between 0.0 and 1.0. A higher number
     /// indicates an estimated greater likelihood that the recognized words are
     /// correct. This field is set only for the top alternative of a non-streaming
@@ -667,7 +673,7 @@ pub struct SpeechRecognitionAlternative {
     /// Note: When `enable_speaker_diarization` is true, you will see all the words
     /// from the beginning of the audio.
     #[prost(message, repeated, tag = "3")]
-    pub words: ::std::vec::Vec<WordInfo>,
+    pub words: ::prost::alloc::vec::Vec<WordInfo>,
 }
 /// Word-specific information for recognized words.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -679,7 +685,7 @@ pub struct WordInfo {
     /// This is an experimental feature and the accuracy of the time offset can
     /// vary.
     #[prost(message, optional, tag = "1")]
-    pub start_time: ::std::option::Option<::prost_types::Duration>,
+    pub start_time: ::core::option::Option<::prost_types::Duration>,
     /// Time offset relative to the beginning of the audio,
     /// and corresponding to the end of the spoken word.
     /// This field is only set if `enable_word_time_offsets=true` and only
@@ -687,10 +693,10 @@ pub struct WordInfo {
     /// This is an experimental feature and the accuracy of the time offset can
     /// vary.
     #[prost(message, optional, tag = "2")]
-    pub end_time: ::std::option::Option<::prost_types::Duration>,
+    pub end_time: ::core::option::Option<::prost_types::Duration>,
     /// The word corresponding to this set of information.
     #[prost(string, tag = "3")]
-    pub word: std::string::String,
+    pub word: ::prost::alloc::string::String,
     /// A distinct integer value is assigned for every speaker within
     /// the audio. This field specifies which one of those speakers was detected to
     /// have spoken this word. Value ranges from '1' to diarization_speaker_count.
@@ -810,208 +816,5 @@ pub mod speech_client {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(f, "SpeechClient {{ ... }}")
         }
-    }
-}
-#[doc = r" Generated server implementations."]
-pub mod speech_server {
-    #![allow(unused_variables, dead_code, missing_docs)]
-    use tonic::codegen::*;
-    #[doc = "Generated trait containing gRPC methods that should be implemented for use with SpeechServer."]
-    #[async_trait]
-    pub trait Speech: Send + Sync + 'static {
-        #[doc = " Performs synchronous speech recognition: receive results after all audio"]
-        #[doc = " has been sent and processed."]
-        async fn recognize(
-            &self,
-            request: tonic::Request<super::RecognizeRequest>,
-        ) -> Result<tonic::Response<super::RecognizeResponse>, tonic::Status>;
-        #[doc = " Performs asynchronous speech recognition: receive results via the"]
-        #[doc = " google.longrunning.Operations interface. Returns either an"]
-        #[doc = " `Operation.error` or an `Operation.response` which contains"]
-        #[doc = " a `LongRunningRecognizeResponse` message."]
-        #[doc = " For more information on asynchronous speech recognition, see the"]
-        #[doc = " [how-to](https://cloud.google.com/speech-to-text/docs/async-recognize)."]
-        async fn long_running_recognize(
-            &self,
-            request: tonic::Request<super::LongRunningRecognizeRequest>,
-        ) -> Result<
-            tonic::Response<super::super::longrunning::Operation>,
-            tonic::Status,
-        >;
-        #[doc = "Server streaming response type for the StreamingRecognize method."]
-        type StreamingRecognizeStream: Stream<Item = Result<super::StreamingRecognizeResponse, tonic::Status>>
-            + Send
-            + Sync
-            + 'static;
-        #[doc = " Performs bidirectional streaming speech recognition: receive results while"]
-        #[doc = " sending audio. This method is only available via the gRPC API (not REST)."]
-        async fn streaming_recognize(
-            &self,
-            request: tonic::Request<tonic::Streaming<super::StreamingRecognizeRequest>>,
-        ) -> Result<tonic::Response<Self::StreamingRecognizeStream>, tonic::Status>;
-    }
-    #[doc = " Service that implements Google Cloud Speech API."]
-    #[derive(Debug)]
-    pub struct SpeechServer<T: Speech> {
-        inner: _Inner<T>,
-    }
-    struct _Inner<T>(Arc<T>, Option<tonic::Interceptor>);
-    impl<T: Speech> SpeechServer<T> {
-        pub fn new(inner: T) -> Self {
-            let inner = Arc::new(inner);
-            let inner = _Inner(inner, None);
-            Self { inner }
-        }
-        pub fn with_interceptor(inner: T, interceptor: impl Into<tonic::Interceptor>) -> Self {
-            let inner = Arc::new(inner);
-            let inner = _Inner(inner, Some(interceptor.into()));
-            Self { inner }
-        }
-    }
-    impl<T, B> Service<http::Request<B>> for SpeechServer<T>
-    where
-        T: Speech,
-        B: HttpBody + Send + Sync + 'static,
-        B::Error: Into<StdError> + Send + 'static,
-    {
-        type Response = http::Response<tonic::body::BoxBody>;
-        type Error = Never;
-        type Future = BoxFuture<Self::Response, Self::Error>;
-        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
-        }
-        fn call(&mut self, req: http::Request<B>) -> Self::Future {
-            let inner = self.inner.clone();
-            match req.uri().path() {
-                "/google.cloud.speech.v1.Speech/Recognize" => {
-                    #[allow(non_camel_case_types)]
-                    struct RecognizeSvc<T: Speech>(pub Arc<T>);
-                    impl<T: Speech> tonic::server::UnaryService<super::RecognizeRequest> for RecognizeSvc<T> {
-                        type Response = super::RecognizeResponse;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::RecognizeRequest>,
-                        ) -> Self::Future {
-                            let inner = self.0.clone();
-                            let fut = async move { (*inner).recognize(request).await };
-                            Box::pin(fut)
-                        }
-                    }
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let interceptor = inner.1.clone();
-                        let inner = inner.0;
-                        let method = RecognizeSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = if let Some(interceptor) = interceptor {
-                            tonic::server::Grpc::with_interceptor(codec, interceptor)
-                        } else {
-                            tonic::server::Grpc::new(codec)
-                        };
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/google.cloud.speech.v1.Speech/LongRunningRecognize" => {
-                    #[allow(non_camel_case_types)]
-                    struct LongRunningRecognizeSvc<T: Speech>(pub Arc<T>);
-                    impl<T: Speech> tonic::server::UnaryService<super::LongRunningRecognizeRequest>
-                        for LongRunningRecognizeSvc<T>
-                    {
-                        type Response = super::super::longrunning::Operation;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::LongRunningRecognizeRequest>,
-                        ) -> Self::Future {
-                            let inner = self.0.clone();
-                            let fut = async move { (*inner).long_running_recognize(request).await };
-                            Box::pin(fut)
-                        }
-                    }
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let interceptor = inner.1.clone();
-                        let inner = inner.0;
-                        let method = LongRunningRecognizeSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = if let Some(interceptor) = interceptor {
-                            tonic::server::Grpc::with_interceptor(codec, interceptor)
-                        } else {
-                            tonic::server::Grpc::new(codec)
-                        };
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/google.cloud.speech.v1.Speech/StreamingRecognize" => {
-                    #[allow(non_camel_case_types)]
-                    struct StreamingRecognizeSvc<T: Speech>(pub Arc<T>);
-                    impl<T: Speech>
-                        tonic::server::StreamingService<super::StreamingRecognizeRequest>
-                        for StreamingRecognizeSvc<T>
-                    {
-                        type Response = super::StreamingRecognizeResponse;
-                        type ResponseStream = T::StreamingRecognizeStream;
-                        type Future =
-                            BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<
-                                tonic::Streaming<super::StreamingRecognizeRequest>,
-                            >,
-                        ) -> Self::Future {
-                            let inner = self.0.clone();
-                            let fut = async move { (*inner).streaming_recognize(request).await };
-                            Box::pin(fut)
-                        }
-                    }
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let interceptor = inner.1;
-                        let inner = inner.0;
-                        let method = StreamingRecognizeSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = if let Some(interceptor) = interceptor {
-                            tonic::server::Grpc::with_interceptor(codec, interceptor)
-                        } else {
-                            tonic::server::Grpc::new(codec)
-                        };
-                        let res = grpc.streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                _ => Box::pin(async move {
-                    Ok(http::Response::builder()
-                        .status(200)
-                        .header("grpc-status", "12")
-                        .body(tonic::body::BoxBody::empty())
-                        .unwrap())
-                }),
-            }
-        }
-    }
-    impl<T: Speech> Clone for SpeechServer<T> {
-        fn clone(&self) -> Self {
-            let inner = self.inner.clone();
-            Self { inner }
-        }
-    }
-    impl<T: Speech> Clone for _Inner<T> {
-        fn clone(&self) -> Self {
-            Self(self.0.clone(), self.1.clone())
-        }
-    }
-    impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{:?}", self.0)
-        }
-    }
-    impl<T: Speech> tonic::transport::NamedService for SpeechServer<T> {
-        const NAME: &'static str = "google.cloud.speech.v1.Speech";
     }
 }

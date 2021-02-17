@@ -33,9 +33,17 @@ pub mod config;
 /// Message handler database.
 pub mod db;
 
+/// Google-specific generated structs and keys (for both TTS and STT)
+#[cfg(any(feature = "gcs", feature = "gctts"))]
+pub mod google;
+
 /// Google Cloud Speech-to-Text module
 #[cfg(feature = "gcs")]
 mod gcs;
+
+/// Google Cloud Text-to-Speech module
+#[cfg(feature = "gctts")]
+mod gctts;
 
 /// TCP server, that listens to incoming AudioSocket messages.
 mod server;
@@ -55,7 +63,10 @@ mod shutdown;
 /// Various services, including speech recognition and voice synthesis.
 mod service;
 
-/// AsyncRead wrapper for receiving messages.
+/// Text-to-speech interfaces.
+mod synthesis;
+
+/// `AsyncRead` wrapper for receiving messages.
 pub mod stream;
 
 #[tokio::main]

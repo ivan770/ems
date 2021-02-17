@@ -5,9 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{from_slice, from_str, to_string, Error as JsonError};
 use thiserror::Error;
 use tokio::{
-    join,
     net::{TcpListener, TcpStream},
-    spawn,
+    select, spawn,
 };
 use tokio_tungstenite::{
     accept_async,
@@ -16,7 +15,13 @@ use tokio_tungstenite::{
 use tracing::{debug, error, info, instrument};
 use uuid::Uuid;
 
-use crate::{config::Config, db::HandlerDatabase, handler::MessageHandlerAction};
+use crate::{
+    config::Config,
+    db::HandlerDatabase,
+    handler::MessageHandlerAction,
+    service::{spawn_speech_synthesis, SpawnedSpeechSynthesis},
+    synthesis::SpeechSynthesisRequest,
+};
 
 /// Generic WebSocket message for both requests and responses.
 #[derive(Serialize, Deserialize)]
@@ -33,6 +38,9 @@ struct WsMessage {
 enum WsAction {
     /// Terminate current call.
     Hangup,
+
+    /// Synthesize speech using configurated service and play it on channel.
+    Synthesize(String),
 
     /// Speech transcription part of current call.
     Transcription(String),
@@ -62,7 +70,9 @@ impl<'c> WsServer<'c> {
     pub fn new(config: &'c Config, database: Arc<HandlerDatabase>) -> Self {
         Self { config, database }
     }
+}
 
+impl WsServer<'static> {
     /// Start WebSocket server on host provided in config.
     #[instrument(skip(self))]
     pub async fn listen(self) -> Result<(), Error> {
@@ -73,7 +83,7 @@ impl<'c> WsServer<'c> {
         loop {
             match listener.accept().await {
                 Ok((stream, _)) => {
-                    spawn(handle_ws(self.database.clone(), stream));
+                    spawn(handle_ws(self.config, self.database.clone(), stream));
                 }
                 Err(e) => error!(inner = %e, "Unable to accept incoming TCP connection."),
             }
@@ -82,19 +92,24 @@ impl<'c> WsServer<'c> {
 }
 
 /// Handle new WebSocket connection.
-async fn handle_ws(database: Arc<HandlerDatabase>, stream: TcpStream) {
+async fn handle_ws(config: &'static Config, database: Arc<HandlerDatabase>, stream: TcpStream) {
     let (sink, stream) = accept_async(stream).await.unwrap().split();
 
-    let _ = join!(
-        accept_messages(database.as_ref(), stream),
-        send_transcriptions(database.as_ref(), sink)
-    );
+    let synthesis = spawn_speech_synthesis(config, database.clone());
+
+    select! {
+        _ = accept_messages(database.as_ref(), stream, &synthesis) => {}
+        _ = send_transcriptions(database.as_ref(), sink) => {},
+    };
 }
 
 /// Start accepting incoming messages on provided [`Stream`].
-#[instrument(skip(database, stream))]
-async fn accept_messages<S>(database: &HandlerDatabase, stream: S)
-where
+#[instrument(skip(database, stream, synthesis))]
+async fn accept_messages<S>(
+    database: &HandlerDatabase,
+    stream: S,
+    synthesis: &Option<SpawnedSpeechSynthesis>,
+) where
     S: Stream<Item = Result<Message, TungsteniteError>>,
 {
     stream
@@ -113,11 +128,18 @@ where
         })
         .for_each_concurrent(None, |message| async move {
             match message {
-                Ok(message) => {
-                    if let WsAction::Hangup = message.data {
+                Ok(message) => match (message.data, synthesis) {
+                    (WsAction::Hangup, _) => {
                         database.send(&message.id, MessageHandlerAction::Hangup);
                     }
-                }
+                    (WsAction::Synthesize(text), Some(synthesis)) => {
+                        synthesis.send(SpeechSynthesisRequest {
+                            id: message.id,
+                            text,
+                        });
+                    }
+                    _ => {}
+                },
                 Err(e) => debug!(error = %e, "Invalid WebSocket message"),
             }
         })
@@ -214,7 +236,7 @@ mod tests {
 
         database.add_handler(TEST_ID, sender);
 
-        accept_messages(&database, stream).await;
+        accept_messages(&database, stream, &None).await;
 
         assert!(logs_contain("Invalid WebSocket message"));
     }
@@ -237,7 +259,7 @@ mod tests {
 
         database.add_handler(TEST_ID, sender);
 
-        accept_messages(&database, stream).await;
+        accept_messages(&database, stream, &None).await;
 
         let recv = receiver.recv().unwrap();
 

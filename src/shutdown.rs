@@ -4,6 +4,8 @@ use std::{
     task::{Context, Poll},
 };
 
+use pin_project::pin_project;
+
 use crate::db::HandlerDatabase;
 
 /// Graceful shutdown for EMS
@@ -13,7 +15,9 @@ use crate::db::HandlerDatabase;
 /// using [`Drop`] or [`remove_handler`].
 ///
 /// [`remove_handler`]: HandlerDatabase::remove_handler
+#[pin_project]
 pub struct Shutdown<'d> {
+    #[pin]
     database: &'d HandlerDatabase,
 }
 
@@ -27,7 +31,7 @@ impl<'d> Future for Shutdown<'d> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
-        if self.get_mut().database.is_empty() {
+        if self.project().database.is_empty() {
             Poll::Ready(())
         } else {
             ctx.waker().wake_by_ref();

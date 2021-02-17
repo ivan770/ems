@@ -3,7 +3,7 @@ use std::{convert::TryInto, io::ErrorKind, sync::Arc, time::Duration};
 use audiosocket::Message;
 use flume::{unbounded, Receiver};
 use tokio::{
-    io::{AsyncRead, AsyncWrite, AsyncWriteExt},
+    io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufWriter},
     try_join,
 };
 use tracing::{debug, instrument, warn};
@@ -12,10 +12,17 @@ use uuid::Uuid;
 use crate::{
     config::Config,
     db::HandlerDatabase,
+    recognition::{SpeechRecognitionConfig, SpeechRecognitionRequest},
     server::ServerError,
-    service::{ServiceSpawner, SpawnedSpeechRecognition},
+    service::{spawn_speech_recognition, SpawnedSpeechRecognition},
     stream::MessageStream,
 };
+
+/// Inner [`BufWriter`] capacity for writing data back to AudioSocket client.
+const AUDIO_BUF_CAPACITY: usize = 64 * 1024;
+
+/// Exact chunk size to be used when sending or receiving audio using AudioSocket.
+pub const CHUNK_SIZE: usize = 320;
 
 /// Message handler, that doesn't have any unique identifier.
 ///
@@ -146,7 +153,7 @@ where
         stream: &'a mut MessageStream<'s, ST>,
         max_time: Duration,
     ) -> Result<(), ServerError> {
-        let (recognition,) = Self::prepare_services(id, config, database.clone());
+        let recognition = Self::prepare_recognition_service(id, config, database.clone());
 
         loop {
             match (stream.recv(max_time).await, recognition.as_ref()) {
@@ -154,7 +161,9 @@ where
                     warn!("Received identifier message on identified message handler")
                 }
                 (Ok(Message::Audio(Some(audio))), Some(dispatched)) => {
-                    dispatched.send(audio.to_vec());
+                    dispatched.send(SpeechRecognitionRequest {
+                        audio: audio.to_vec(),
+                    });
                 }
                 (Ok(Message::Terminate), _) => {
                     debug!("Obtained termination message");
@@ -180,6 +189,8 @@ where
         channel: &Receiver<MessageHandlerAction>,
         sink: &mut SI,
     ) -> Result<(), ServerError> {
+        let mut sink = BufWriter::with_capacity(AUDIO_BUF_CAPACITY, sink);
+
         while let Ok(event) = channel.recv_async().await {
             match event {
                 MessageHandlerAction::Hangup => {
@@ -187,21 +198,43 @@ where
                         .await?;
                 }
                 MessageHandlerAction::Play(audio) => {
-                    sink.write_all(&TryInto::<Vec<u8>>::try_into(Message::Audio(Some(&audio)))?)
-                        .await?;
+                    let chunks = audio.chunks_exact(CHUNK_SIZE);
+                    let remainder = chunks.remainder();
+
+                    for chunk in chunks {
+                        sink.write_all(&TryInto::<Vec<u8>>::try_into(Message::Audio(Some(chunk)))?)
+                            .await?;
+                    }
+
+                    let mut remainder = remainder.to_owned();
+                    remainder.resize(CHUNK_SIZE, 0);
+
+                    sink.write_all(&TryInto::<Vec<u8>>::try_into(Message::Audio(Some(
+                        &remainder,
+                    )))?)
+                    .await?;
                 }
             }
+
+            sink.flush().await?;
         }
 
         Ok(())
     }
 
-    fn prepare_services(
+    fn prepare_recognition_service(
         id: Uuid,
         config: &'static Config,
         database: Arc<HandlerDatabase>,
-    ) -> (Option<SpawnedSpeechRecognition>,) {
-        ServiceSpawner::new(id, config, database).spawn_from_config()
+    ) -> Option<SpawnedSpeechRecognition> {
+        let recognition_config = SpeechRecognitionConfig {
+            application_config: config,
+            language: String::from("ru-RU"),
+            profanity_filter: false,
+            punctuation: false,
+        };
+
+        spawn_speech_recognition(id, recognition_config, database)
     }
 }
 

@@ -1,7 +1,5 @@
 use std::{error::Error, future::Future, sync::Arc};
 
-#[cfg(feature = "gcs")]
-use flume::unbounded;
 use flume::Sender;
 use from_config::FromConfig;
 use futures_util::{
@@ -9,21 +7,26 @@ use futures_util::{
     stream::{Stream, TryStream},
     StreamExt, TryStreamExt,
 };
-#[cfg(feature = "gcs")]
-use tokio::spawn;
 use tracing::instrument;
 use uuid::Uuid;
+#[cfg(any(feature = "gcs", feature = "gctts"))]
+use {flume::unbounded, tokio::spawn};
 
+use crate::{
+    config::Config,
+    db::HandlerDatabase,
+    recognition::{SpeechRecognitionConfig, SpeechRecognitionRequest},
+    synthesis::SpeechSynthesisRequest,
+};
 #[cfg(feature = "gcs")]
 use crate::{
     config::SpeechRecognitionDriver, gcs::driver::GoogleCloudSpeech,
-    gctts::driver::GoogleCloudTextToSpeech, recognition::SpeechRecognitionSink,
+    recognition::SpeechRecognitionSink,
 };
+#[cfg(feature = "gctts")]
 use crate::{
-    config::{Config, SpeechSynthesisDriver},
-    db::HandlerDatabase,
-    recognition::{SpeechRecognitionConfig, SpeechRecognitionRequest},
-    synthesis::{SpeechSynthesisRequest, SpeechSynthesisSink},
+    config::SpeechSynthesisDriver, gctts::driver::GoogleCloudTextToSpeech,
+    synthesis::SpeechSynthesisSink,
 };
 
 /// FromConfig trait.
@@ -93,6 +96,7 @@ where
 /// Spawn needed services from current application config.
 ///
 /// Some services require their own respective features to be enabled (`gcs` for Google Cloud Speech as an example).
+#[allow(unused_variables)]
 pub fn spawn_speech_recognition(
     id: Uuid,
     config: SpeechRecognitionConfig<'static>,
@@ -118,6 +122,7 @@ pub fn spawn_speech_recognition(
     }
 }
 
+#[allow(unused_variables)]
 pub fn spawn_speech_synthesis(
     config: &'static Config,
     database: Arc<HandlerDatabase>,
@@ -136,7 +141,7 @@ pub fn spawn_speech_synthesis(
 
             Some(SpawnedSpeechSynthesis::new(text_sender))
         }
-        #[cfg(not(feature = "gcs"))]
+        #[cfg(not(feature = "gctts"))]
         Some(_) => None,
         None => None,
     }
@@ -166,6 +171,7 @@ pub struct SpawnedSpeechSynthesis {
 
 impl SpawnedSpeechSynthesis {
     /// Create new [`SpawnedSpeechRecognition`] from provided [`Sender`].
+    #[allow(dead_code)]
     pub fn new(sender: Sender<SpeechSynthesisRequest>) -> Self {
         Self { sender }
     }

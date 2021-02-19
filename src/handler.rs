@@ -153,7 +153,7 @@ where
         stream: &'a mut MessageStream<'s, ST>,
         max_time: Duration,
     ) -> Result<(), ServerError> {
-        let recognition = Self::prepare_recognition_service(id, config, database.clone());
+        let recognition = prepare_recognition_service(id, config, database.clone());
 
         loop {
             match (stream.recv(max_time).await, recognition.as_ref()) {
@@ -221,21 +221,6 @@ where
 
         Ok(())
     }
-
-    fn prepare_recognition_service(
-        id: Uuid,
-        config: &'static Config,
-        database: Arc<HandlerDatabase>,
-    ) -> Option<SpawnedSpeechRecognition> {
-        let recognition_config = SpeechRecognitionConfig {
-            application_config: config,
-            language: String::from("ru-RU"),
-            profanity_filter: false,
-            punctuation: false,
-        };
-
-        spawn_speech_recognition(id, recognition_config, database)
-    }
 }
 
 // TODO: Check if we are closing connection gracefully, as debug logs
@@ -244,4 +229,19 @@ impl<'c, 's, ST, SI> Drop for IdentifiableMessageHandler<'c, 's, ST, SI> {
     fn drop(&mut self) {
         self.database.remove_handler(self.id);
     }
+}
+
+fn prepare_recognition_service(
+    id: Uuid,
+    config: &'static Config,
+    database: Arc<HandlerDatabase>,
+) -> Option<SpawnedSpeechRecognition> {
+    let recognition_config = SpeechRecognitionConfig {
+        application_config: config,
+        language: String::from("ru-RU"),
+        profanity_filter: false,
+        punctuation: false,
+    };
+
+    spawn_speech_recognition(id, recognition_config, database)
 }

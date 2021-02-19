@@ -23,7 +23,7 @@ use crate::{
         AUTH_SCOPE, CERTS,
     },
     service::{from_config::FromConfig, Service},
-    synthesis::{SpeechSynthesisRequest, SpeechSynthesisResponse},
+    synthesis::{SpeechSynthesisRequest, SpeechSynthesisResponse, SynthesisVoiceGender},
 };
 
 const DOMAIN_NAME: &str = "texttospeech.googleapis.com";
@@ -119,9 +119,9 @@ where
                     input_source: Some(InputSource::Text(request.text)),
                 }),
                 voice: Some(VoiceSelectionParams {
-                    language_code: String::from("en-US"),
+                    language_code: request.language_code,
                     name: String::from(""),
-                    ssml_gender: SsmlVoiceGender::Male.into(),
+                    ssml_gender: SsmlVoiceGender::from(request.gender.unwrap_or(SynthesisVoiceGender::Any)).into(),
                 }),
                 audio_config: Some(AudioConfig {
                     audio_encoding: AudioEncoding::Linear16.into(),

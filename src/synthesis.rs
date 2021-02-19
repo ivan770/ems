@@ -18,6 +18,34 @@ pub struct SpeechSynthesisRequest {
 
     /// Text to synthesize.
     pub text: String,
+
+    /// Language and region of of the voice expressed as a BCP-47 language tag.
+    pub language_code: String,
+
+    /// Preferred voice gender.
+    pub gender: Option<SynthesisVoiceGender>,
+}
+
+/// Gender of speech synthesis voice.
+///
+/// Consult <https://www.w3.org/TR/speech-synthesis11/#edef_voice> for additional info.
+/// If used in [`Option`] context, [`SynthesisVoiceGender::Any`] should be used as a fallback.
+pub enum SynthesisVoiceGender {
+    Any,
+    Male,
+    Female,
+    Neutral,
+}
+
+impl From<&str> for SynthesisVoiceGender {
+    fn from(gender: &str) -> Self {
+        match gender {
+            "male" => SynthesisVoiceGender::Male,
+            "female" => SynthesisVoiceGender::Female,
+            "neutral" => SynthesisVoiceGender::Neutral,
+            _ => SynthesisVoiceGender::Any,
+        }
+    }
 }
 
 /// Result of speech synthesis. Contains UUID of handler and synthesized audio.

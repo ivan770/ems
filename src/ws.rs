@@ -40,7 +40,16 @@ enum WsAction {
     Hangup,
 
     /// Synthesize speech using configurated service and play it on channel.
-    Synthesize(String),
+    Synthesize {
+        /// Text to synthesize.
+        text: String,
+
+        /// Language and region of of the voice expressed as a BCP-47 language tag.
+        language_code: String,
+
+        /// Preferred voice gender.
+        gender: Option<String>,
+    },
 
     /// Speech transcription part of current call.
     Transcription(String),
@@ -132,10 +141,19 @@ async fn accept_messages<S>(
                     (WsAction::Hangup, _) => {
                         database.send(&message.id, MessageHandlerAction::Hangup);
                     }
-                    (WsAction::Synthesize(text), Some(synthesis)) => {
+                    (
+                        WsAction::Synthesize {
+                            text,
+                            language_code,
+                            gender,
+                        },
+                        Some(synthesis),
+                    ) => {
                         synthesis.send(SpeechSynthesisRequest {
                             id: message.id,
                             text,
+                            language_code,
+                            gender: gender.as_deref().map(Into::into),
                         });
                     }
                     _ => {}

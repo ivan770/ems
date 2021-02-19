@@ -69,6 +69,9 @@ pub struct SpeechSynthesisSink<E> {
 }
 
 impl<E> SpeechSynthesisSink<E> {
+    // We're silencing dead_code here because of lack of sink usage if there are no drivers available
+    // yet we cannot depend on any driver presence here.
+    #[allow(dead_code)]
     pub fn new(database: Arc<HandlerDatabase>) -> Self {
         Self {
             database,

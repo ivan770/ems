@@ -20,7 +20,9 @@ pub static TEST_CONFIG: once_cell::sync::Lazy<Config> = once_cell::sync::Lazy::n
     message_timeout: 10,
     recognition_driver: None,
     synthesis_driver: None,
+    #[cfg(feature = "gcs")]
     gcs_config: None,
+    #[cfg(feature = "gctts")]
     gctts_config: None,
 });
 

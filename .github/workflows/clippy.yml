@@ -1,4 +1,4 @@
-name: Test workspace
+name: Check Clippy warnings
 
 on:
   push:
@@ -22,12 +22,13 @@ jobs:
           profile: minimal
           toolchain: nightly
           target: x86_64-unknown-linux-musl
+          components: clippy
           override: true
-      - name: Run tests
+      - name: Run clippy
         uses: actions-rs/cargo@v1
         with:
-          command: test
-          args: --all-features
+          command: clippy
+          args: --all-features -- -D clippy::all --deny warnings
   linux-minimal:
     name: Linux without default features
     runs-on: ubuntu-latest
@@ -39,9 +40,10 @@ jobs:
           profile: minimal
           toolchain: nightly
           target: x86_64-unknown-linux-musl
+          components: clippy
           override: true
-      - name: Run tests
+      - name: Run clippy
         uses: actions-rs/cargo@v1
         with:
-          command: test
-          args: --no-default-features
+          command: clippy
+          args: --no-default-features -- -D clippy::all --deny warnings

@@ -24,8 +24,8 @@ pub enum ServerError {
     #[error("Exceeded max await time for next AudioSocket message: {0}")]
     TimeoutError(#[from] Elapsed),
 
-    #[error("Connection was closed by client: {0}")]
-    ClientDisconnected(IoError),
+    #[error("Connection was closed by client")]
+    ClientDisconnected(Option<IoError>),
 }
 
 pub struct AudioSocketServer<'c> {

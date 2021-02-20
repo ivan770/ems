@@ -250,7 +250,7 @@ mod tests {
 
     use audiosocket::Message;
     use tokio::{
-        io::{duplex, AsyncWriteExt, DuplexStream},
+        io::{duplex, AsyncReadExt, AsyncWriteExt, DuplexStream},
         spawn,
         task::JoinHandle,
         time::sleep,
@@ -258,9 +258,12 @@ mod tests {
     use tracing_test::traced_test;
     use uuid::Uuid;
 
-    use super::AnonymousMessageHandler;
     use crate::{
-        config::TEST_CONFIG, db::HandlerDatabase, server::ServerError, stream::MessageStream,
+        config::TEST_CONFIG,
+        db::HandlerDatabase,
+        handler::{AnonymousMessageHandler, MessageHandlerAction},
+        server::ServerError,
+        stream::MessageStream,
     };
 
     fn prepare_handler() -> (
@@ -323,8 +326,98 @@ mod tests {
             .await
             .unwrap();
 
+        handle.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn hangups() {
+        let (database, _, mut sender, mut receiver) = prepare_handler();
+
+        sender
+            .write_all(&TryInto::<Vec<u8>>::try_into(Message::Identifier(Uuid::nil())).unwrap())
+            .await
+            .unwrap();
+
+        // Wait for an upgrade and other stuff
         sleep(Duration::from_secs(1)).await;
 
-        handle.await.unwrap().unwrap();
+        database.send(&Uuid::nil(), MessageHandlerAction::Hangup);
+
+        // Wait for handler to send hangup back
+        sleep(Duration::from_secs(1)).await;
+
+        let mut buf = [0; 3];
+
+        receiver.read_exact(&mut buf).await.unwrap();
+
+        assert_eq!(buf, [0, 0, 0]);
+    }
+
+    #[tokio::test]
+    async fn transmits_audio() {
+        let (database, _, mut sender, mut receiver) = prepare_handler();
+
+        sender
+            .write_all(&TryInto::<Vec<u8>>::try_into(Message::Identifier(Uuid::nil())).unwrap())
+            .await
+            .unwrap();
+
+        // Wait for an upgrade and other stuff
+        sleep(Duration::from_secs(1)).await;
+
+        database.send(
+            &Uuid::nil(),
+            MessageHandlerAction::Play(vec![1, 2, 3, 4, 5]),
+        );
+
+        database.send(
+            &Uuid::nil(),
+            MessageHandlerAction::Play(Vec::from([1; 320])),
+        );
+
+        // Wait for handler to send audio back
+        sleep(Duration::from_secs(1)).await;
+
+        let mut buf = [0; 323];
+
+        receiver.read_exact(&mut buf).await.unwrap();
+
+        assert_eq!(
+            buf,
+            [
+                16, 1, 64, 1, 2, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            ]
+        );
+
+        receiver.read_exact(&mut buf).await.unwrap();
+
+        assert_eq!(
+            buf,
+            [
+                16, 1, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+            ]
+        );
     }
 }

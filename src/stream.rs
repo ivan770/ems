@@ -9,7 +9,7 @@ use tracing::{debug, instrument, warn};
 
 use crate::server::ServerError;
 
-/// Stream wrapper, that produces AudioSocket messages from bytes.
+/// Stream wrapper, that produces `AudioSocket` messages from bytes.
 pub struct MessageStream<'s, S> {
     buf: Vec<u8>,
     stream: &'s mut S,
@@ -35,7 +35,7 @@ where
         self.buf.clear();
 
         // For now, we'll wait just for the first byte.
-        // If you have any issues with this approach, please open a new issue.
+        // If you have any troubles with this approach, please open a new issue.
         let message_type = timeout(max_time, self.stream.read_u8()).await??;
         let length = self.stream.read_u16().await?;
         let read = self
@@ -74,7 +74,7 @@ mod tests {
     use tokio::io::{AsyncRead, ReadBuf};
 
     use super::MessageStream;
-    use crate::server::ServerError;
+    use crate::{handler::CHUNK_SIZE, server::ServerError};
 
     struct Pending;
 
@@ -90,7 +90,7 @@ mod tests {
 
     #[tokio::test]
     async fn audio_silence() {
-        let silence = Message::Audio(Some(&[0; 320]));
+        let silence = Message::Audio(Some(&[0; CHUNK_SIZE]));
 
         let mut cursor = Cursor::<Vec<u8>>::new(silence.try_into().unwrap());
 

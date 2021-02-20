@@ -14,7 +14,7 @@ default = ["gcs", "gctts"]
 gcs = ["tonic", "prost", "prost-types", "yup-oauth2", "tokio-stream"]
 
 # Add support for Google Text-to-Speech service
-gctts = ["gcs", "async-stream", "hound"]
+gctts = ["gcs", "async-stream"]
 
 # Enable jemalloc as default allocator
 jemalloc = ["jemallocator"]
@@ -42,7 +42,6 @@ uuid = { version = "0.8", features = ["serde"] }
 
 # GCTTS dependencies
 async-stream = { version = "0.3", optional = true }
-hound = { version = "3", optional = true }
 
 # GCS dependencies
 tonic = { version = "0.4", features = ["transport", "prost", "tls"], optional = true }

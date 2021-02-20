@@ -69,7 +69,6 @@ async fn spawn_service<C, I, O, S>(
     mut sink: O,
 ) -> Result<(), <S as Service<I>>::Error>
 where
-    C: 'static,
     I: Stream<Item = <S as Service<I>>::Input> + Send + Sync + 'static,
     O: Sink<<<S as Service<I>>::Ok as TryStream>::Ok, Error = <S as Service<I>>::Error>
         + Send

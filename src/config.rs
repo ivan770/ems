@@ -13,6 +13,17 @@ use crate::gcs::config::GoogleCloudSpeechConfig;
 #[cfg(feature = "gctts")]
 use crate::gctts::config::GoogleCloudTextToSpeechConfig;
 
+#[cfg(test)]
+pub static TEST_CONFIG: once_cell::sync::Lazy<Config> = once_cell::sync::Lazy::new(|| Config {
+    audiosocket_addr: std::str::FromStr::from_str("127.0.0.1:12345").unwrap(),
+    websocket_addr: std::str::FromStr::from_str("127.0.0.1:12346").unwrap(),
+    message_timeout: 10,
+    recognition_driver: None,
+    synthesis_driver: None,
+    gcs_config: None,
+    gctts_config: None,
+});
+
 const fn default_message_timeout() -> u64 {
     3
 }

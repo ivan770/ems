@@ -4,7 +4,7 @@ use audiosocket::Message;
 use flume::{unbounded, Receiver};
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufWriter},
-    try_join,
+    select,
 };
 use tracing::{debug, instrument, warn};
 use uuid::Uuid;
@@ -128,16 +128,16 @@ where
     /// Listen for incoming messages from [`MessageStream`], and execute [`MessageHandlerAction`] events.
     #[instrument(skip(self), err, name = "id_listen", fields(id = %self.id))]
     pub async fn listen(mut self, max_time: Duration) -> Result<(), ServerError> {
-        let result = try_join!(
-            Self::handle_messages(
+        let result = select! {
+            res = Self::handle_messages(
                 self.id,
                 self.config,
                 &self.database,
                 &mut self.stream,
                 max_time
-            ),
-            Self::action_listen(&self.channel, self.sink)
-        );
+            ) => Err(res),
+            res = Self::action_listen(&self.channel, self.sink) => res,
+        };
 
         match result {
             Ok(_) | Err(ServerError::ClientDisconnected(_)) => Ok(()),
@@ -152,7 +152,7 @@ where
         database: &'a Arc<HandlerDatabase>,
         stream: &'a mut MessageStream<'s, ST>,
         max_time: Duration,
-    ) -> Result<(), ServerError> {
+    ) -> ServerError {
         let recognition = prepare_recognition_service(id, config, database.clone());
 
         loop {
@@ -167,21 +167,19 @@ where
                 }
                 (Ok(Message::Terminate), _) => {
                     debug!("Obtained termination message");
-                    break;
+                    return ServerError::ClientDisconnected(None);
                 }
                 (Err(ServerError::IoError(e)), _)
                     if e.kind() == ErrorKind::BrokenPipe
                         || e.kind() == ErrorKind::UnexpectedEof
                         || e.kind() == ErrorKind::ConnectionReset =>
                 {
-                    return Err(ServerError::ClientDisconnected(e));
+                    return ServerError::ClientDisconnected(Some(e));
                 }
-                (Err(e), _) => return Err(e),
+                (Err(e), _) => return e,
                 _ => {}
             }
         }
-
-        Ok(())
     }
 
     /// Listen for incoming actions from channel, and send call events (hangup, audio playback, etc.) to sink.
@@ -219,7 +217,7 @@ where
             sink.flush().await?;
         }
 
-        Ok(())
+        Err(ServerError::ClientDisconnected(None))
     }
 }
 
@@ -244,4 +242,89 @@ fn prepare_recognition_service(
     };
 
     spawn_speech_recognition(id, recognition_config, database)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{convert::TryInto, sync::Arc, time::Duration};
+
+    use audiosocket::Message;
+    use tokio::{
+        io::{duplex, AsyncWriteExt, DuplexStream},
+        spawn,
+        task::JoinHandle,
+        time::sleep,
+    };
+    use tracing_test::traced_test;
+    use uuid::Uuid;
+
+    use super::AnonymousMessageHandler;
+    use crate::{
+        config::TEST_CONFIG, db::HandlerDatabase, server::ServerError, stream::MessageStream,
+    };
+
+    fn prepare_handler() -> (
+        Arc<HandlerDatabase>,
+        JoinHandle<Result<(), ServerError>>,
+        DuplexStream,
+        DuplexStream,
+    ) {
+        let database = Arc::new(HandlerDatabase::default());
+
+        let (as_sender, mut as_receiver) = duplex(128);
+        let (mut data_sender, data_receiver) = duplex(128);
+
+        let db_clone = database.clone();
+        let handle = spawn(async move {
+            let handler = AnonymousMessageHandler::new(
+                &*TEST_CONFIG,
+                db_clone,
+                MessageStream::new(&mut as_receiver),
+                &mut data_sender,
+            );
+
+            handler.listen(Duration::from_secs(5)).await
+        });
+
+        (database, handle, as_sender, data_receiver)
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn upgrades_on_identifier() {
+        let (_, _, mut sender, _) = prepare_handler();
+
+        sender
+            .write_all(&TryInto::<Vec<u8>>::try_into(Message::Identifier(Uuid::nil())).unwrap())
+            .await
+            .unwrap();
+        sender
+            .write_all(&TryInto::<Vec<u8>>::try_into(Message::Identifier(Uuid::nil())).unwrap())
+            .await
+            .unwrap();
+
+        sleep(Duration::from_secs(1)).await;
+
+        assert!(logs_contain(
+            "Received identifier message on identified message handler"
+        ));
+    }
+
+    #[tokio::test]
+    async fn terminates() {
+        let (_, handle, mut sender, _) = prepare_handler();
+
+        sender
+            .write_all(&TryInto::<Vec<u8>>::try_into(Message::Identifier(Uuid::nil())).unwrap())
+            .await
+            .unwrap();
+        sender
+            .write_all(&TryInto::<Vec<u8>>::try_into(Message::Terminate).unwrap())
+            .await
+            .unwrap();
+
+        sleep(Duration::from_secs(1)).await;
+
+        handle.await.unwrap().unwrap();
+    }
 }

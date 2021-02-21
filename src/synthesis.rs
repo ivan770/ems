@@ -16,14 +16,25 @@ pub struct SpeechSynthesisRequest {
     /// Handler UUID, that will play audio after speech synthesis process.
     pub id: Uuid,
 
-    /// Text to synthesize.
-    pub text: String,
+    /// SSML to synthesize.
+    pub ssml: String,
 
     /// Language and region of of the voice expressed as a BCP-47 language tag.
     pub language_code: String,
 
     /// Preferred voice gender.
     pub gender: Option<SynthesisVoiceGender>,
+
+    /// Speaking rate/speed.
+    ///
+    /// Interpretation of this value is up to speech synthesis provider.
+    pub speaking_rate: Option<f64>,
+
+    /// Speaking pitch.
+    ///
+    /// Similar to `speaking_rate`, its up to speech synthesis provider to decide how to
+    /// interpret this value.
+    pub pitch: Option<f64>,
 }
 
 /// Gender of speech synthesis voice.

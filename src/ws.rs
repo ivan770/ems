@@ -42,14 +42,20 @@ enum WsAction {
 
     /// Synthesize speech using configured service and play it on channel.
     Synthesize {
-        /// Text to synthesize.
-        text: String,
+        /// SSML to synthesize.
+        ssml: String,
 
         /// Language and region of of the voice expressed as a BCP-47 language tag.
         language_code: String,
 
         /// Preferred voice gender.
         gender: Option<String>,
+
+        /// Speaking rate/speed.
+        speaking_rate: Option<f64>,
+
+        /// Speaking pitch.
+        pitch: Option<f64>,
     },
 
     /// Play base64-encoded audio.
@@ -159,17 +165,21 @@ async fn accept_messages<S>(
                     },
                     (
                         WsAction::Synthesize {
-                            text,
+                            ssml,
                             language_code,
                             gender,
+                            speaking_rate,
+                            pitch,
                         },
                         Some(synthesis),
                     ) => {
                         synthesis.send(SpeechSynthesisRequest {
                             id: message.id,
-                            text,
+                            ssml,
                             language_code,
                             gender: gender.as_deref().map(Into::into),
+                            speaking_rate,
+                            pitch,
                         });
                     }
                     _ => {}

@@ -116,7 +116,7 @@ where
         for await request in incoming {
             let response = client.synthesize_speech(SynthesizeSpeechRequest {
                 input: Some(SynthesisInput {
-                    input_source: Some(InputSource::Text(request.text)),
+                    input_source: Some(InputSource::Ssml(request.ssml)),
                 }),
                 voice: Some(VoiceSelectionParams {
                     language_code: request.language_code,
@@ -125,8 +125,8 @@ where
                 }),
                 audio_config: Some(AudioConfig {
                     audio_encoding: AudioEncoding::Linear16.into(),
-                    speaking_rate: 1.,
-                    pitch: 0.,
+                    speaking_rate: request.speaking_rate.unwrap_or(1.),
+                    pitch: request.pitch.unwrap_or(0.),
                     volume_gain_db: 0.,
                     sample_rate_hertz: 8000,
                     effects_profile_id: vec![String::from("telephony-class-application")],

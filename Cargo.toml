@@ -23,6 +23,7 @@ jemalloc = ["jemallocator"]
 anyhow = { version = "1" }
 argh = { version = "0.1" }
 audiosocket = { version = "1" }
+base64 = { version = "0.13" }
 dashmap = { version = "4" }
 deadqueue = { version = "0.2" }
 flume = { version = "0.10" }

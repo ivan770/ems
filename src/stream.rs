@@ -2,17 +2,20 @@ use std::{convert::TryInto, time::Duration};
 
 use audiosocket::{AudioSocketError, Message, RawMessage};
 use tokio::{
-    io::{AsyncRead, AsyncReadExt},
+    io::{AsyncRead, AsyncReadExt, BufReader},
     time::timeout,
 };
 use tracing::{debug, instrument, warn};
 
 use crate::server::ServerError;
 
+/// Inner [`BufReader`] capacity for reading data from AudioSocket client.
+const AUDIO_BUF_CAPACITY: usize = 16 * 1024;
+
 /// Stream wrapper, that produces `AudioSocket` messages from bytes.
 pub struct MessageStream<'s, S> {
     buf: Vec<u8>,
-    stream: &'s mut S,
+    stream: BufReader<&'s mut S>,
 }
 
 impl<'s, S> MessageStream<'s, S>
@@ -23,7 +26,7 @@ where
     pub fn new(stream: &'s mut S) -> Self {
         MessageStream {
             buf: Vec::new(),
-            stream,
+            stream: BufReader::with_capacity(AUDIO_BUF_CAPACITY, stream),
         }
     }
 
@@ -38,8 +41,7 @@ where
         // If you have any troubles with this approach, please open a new issue.
         let message_type = timeout(max_time, self.stream.read_u8()).await??;
         let length = self.stream.read_u16().await?;
-        let read = self
-            .stream
+        let read = (&mut self.stream)
             .take(u64::from(length))
             .read_to_end(&mut self.buf)
             .await?;

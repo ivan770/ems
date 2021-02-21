@@ -1,5 +1,6 @@
 use std::{future::ready, io::Error, sync::Arc};
 
+use base64::decode;
 use futures_util::{sink::Sink, stream::Stream, SinkExt, StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_slice, from_str, to_string, Error as JsonError};
@@ -12,7 +13,7 @@ use tokio_tungstenite::{
     accept_async,
     tungstenite::{Error as TungsteniteError, Message},
 };
-use tracing::{debug, error, info, instrument};
+use tracing::{error, info, instrument};
 use uuid::Uuid;
 
 use crate::{
@@ -39,7 +40,7 @@ enum WsAction {
     /// Terminate current call.
     Hangup,
 
-    /// Synthesize speech using configurated service and play it on channel.
+    /// Synthesize speech using configured service and play it on channel.
     Synthesize {
         /// Text to synthesize.
         text: String,
@@ -50,6 +51,13 @@ enum WsAction {
         /// Preferred voice gender.
         gender: Option<String>,
     },
+
+    /// Play base64-encoded audio.
+    ///
+    /// EMS itself does no checks on provided audio,
+    /// so it's up to user to ensure that active AudioSocket client
+    /// supports it.
+    Play(String),
 
     /// Speech transcription part of current call.
     Transcription(String),
@@ -141,6 +149,14 @@ async fn accept_messages<S>(
                     (WsAction::Hangup, _) => {
                         database.send(&message.id, MessageHandlerAction::Hangup);
                     }
+                    (WsAction::Play(audio), _) => match decode(audio) {
+                        Ok(decoded) => {
+                            database.send(&message.id, MessageHandlerAction::Play(decoded));
+                        }
+                        Err(e) => {
+                            error!(error = %e, "Provided value is not base64 encoded.");
+                        }
+                    },
                     (
                         WsAction::Synthesize {
                             text,
@@ -158,7 +174,7 @@ async fn accept_messages<S>(
                     }
                     _ => {}
                 },
-                Err(e) => debug!(error = %e, "Invalid WebSocket message"),
+                Err(e) => error!(error = %e, "Invalid WebSocket message"),
             }
         })
         .await;
@@ -190,6 +206,7 @@ mod tests {
         task::{Context, Poll},
     };
 
+    use base64::encode;
     use flume::{unbounded, Sender};
     use futures_util::{sink::Sink, stream::once};
     use serde_json::from_str;
@@ -282,6 +299,34 @@ mod tests {
         let recv = receiver.recv().unwrap();
 
         assert!(matches!(recv, MessageHandlerAction::Hangup));
+    }
+
+    #[tokio::test]
+    async fn accept_ws_audio() {
+        let stream = once(ready(Ok(Message::Text(format!(
+            r#"
+            {{
+                "id": "{}",
+                "data": {{
+                    "Play": "{}"
+                }}
+            }}
+        "#,
+            TEST_ID,
+            encode(&[1, 2, 3, 4, 5])
+        )))));
+
+        let database = HandlerDatabase::default();
+
+        let (sender, receiver) = unbounded();
+
+        database.add_handler(TEST_ID, sender);
+
+        accept_messages(&database, stream, &None).await;
+
+        let recv = receiver.recv().unwrap();
+
+        assert!(matches!(recv, MessageHandlerAction::Play(audio) if audio == vec![1, 2, 3, 4, 5]));
     }
 
     #[tokio::test]

@@ -267,6 +267,7 @@ dependencies = [
  "argh",
  "async-stream",
  "audiosocket",
+ "base64",
  "dashmap",
  "deadqueue",
  "flume",

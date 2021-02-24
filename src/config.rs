@@ -24,6 +24,7 @@ pub static TEST_CONFIG: once_cell::sync::Lazy<Config> = once_cell::sync::Lazy::n
     gcs_config: None,
     #[cfg(feature = "gctts")]
     gctts_config: None,
+    loopback_audio: false,
 });
 
 const fn default_message_timeout() -> u64 {
@@ -103,6 +104,12 @@ pub struct Config {
     #[cfg(feature = "gctts")]
     #[serde(rename = "gctts")]
     gctts_config: Option<GoogleCloudTextToSpeechConfig>,
+
+    /// Send all received audio back.
+    ///
+    /// This option is used mostly for debugging reasons.
+    #[serde(default)]
+    loopback_audio: bool,
 }
 
 // We can use sync FS API to load config, as there are no other tasks
@@ -160,5 +167,10 @@ impl Config {
     #[cfg(feature = "gctts")]
     pub fn gctts_config(&self) -> &Option<GoogleCloudTextToSpeechConfig> {
         &self.gctts_config
+    }
+
+    /// Get audio loopback configuration setting.
+    pub fn loopback_audio(&self) -> bool {
+        self.loopback_audio
     }
 }

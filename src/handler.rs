@@ -161,8 +161,12 @@ where
                     warn!("Received identifier message on identified message handler")
                 }
                 (Ok(Message::Audio(Some(audio))), Some(dispatched)) => {
+                    if config.loopback_audio() {
+                        database.send(&id, MessageHandlerAction::Play(audio.to_owned()));
+                    }
+
                     dispatched.send(SpeechRecognitionRequest {
-                        audio: audio.to_vec(),
+                        audio: audio.to_owned(),
                     });
                 }
                 (Ok(Message::Terminate), _) => {

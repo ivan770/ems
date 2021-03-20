@@ -1,7 +1,8 @@
-use std::{future::Future, io::Error as IoError};
+use std::{future::Future, io::Error as IoError, path::PathBuf};
 
 use async_stream::stream;
 use futures_util::{pin_mut, stream::Stream};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tonic::{
     metadata::{errors::InvalidMetadataValue, MetadataValue},
@@ -48,6 +49,12 @@ pub enum CloudTextToSpeechError {
 
     #[error("Unable to call gRPC API: {0}")]
     CallError(#[from] Status),
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GoogleCloudTextToSpeechConfig {
+    /// Path to service credentials file.
+    pub(crate) service_account_path: PathBuf,
 }
 
 pub struct GoogleCloudTextToSpeech {
@@ -171,6 +178,17 @@ where
             let access_token = authenticator.token(&[AUTH_SCOPE]).await?;
 
             Ok(GoogleCloudTextToSpeech::new(access_token))
+        }
+    }
+}
+
+impl From<SynthesisVoiceGender> for SsmlVoiceGender {
+    fn from(voice: SynthesisVoiceGender) -> Self {
+        match voice {
+            SynthesisVoiceGender::Any => SsmlVoiceGender::Unspecified,
+            SynthesisVoiceGender::Male => SsmlVoiceGender::Male,
+            SynthesisVoiceGender::Female => SsmlVoiceGender::Female,
+            SynthesisVoiceGender::Neutral => SsmlVoiceGender::Neutral,
         }
     }
 }

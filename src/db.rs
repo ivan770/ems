@@ -81,10 +81,7 @@ mod tests {
     async fn test_transcription() {
         let database = HandlerDatabase::default();
 
-        database.add_notification(WsNotification::Transcription(
-            TEST_ID,
-            String::from("test"),
-        ));
+        database.add_notification(WsNotification::Transcription(TEST_ID, String::from("test")));
 
         assert!(
             matches!(database.recv_notification().await, WsNotification::Transcription(id, message) if id == TEST_ID && message == String::from("test"))

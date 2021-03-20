@@ -57,4 +57,5 @@ yup-oauth2 = { version = "5", optional = true }
 jemallocator = { version = "0.3", optional = true }
 
 [dev-dependencies]
+expect-test = "1.1.0"
 tracing-test = "0.1"

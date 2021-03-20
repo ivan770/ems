@@ -20,13 +20,11 @@ use crate::{
 };
 #[cfg(feature = "gcs")]
 use crate::{
-    config::SpeechRecognitionDriver, gcs::driver::GoogleCloudSpeech,
-    recognition::SpeechRecognitionSink,
+    config::SpeechRecognitionDriver, gcs::GoogleCloudSpeech, recognition::SpeechRecognitionSink,
 };
 #[cfg(feature = "gctts")]
 use crate::{
-    config::SpeechSynthesisDriver, gctts::driver::GoogleCloudTextToSpeech,
-    synthesis::SpeechSynthesisSink,
+    config::SpeechSynthesisDriver, gctts::GoogleCloudTextToSpeech, synthesis::SpeechSynthesisSink,
 };
 
 /// FromConfig trait.

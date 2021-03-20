@@ -1,11 +1,13 @@
 use std::{
     future::{ready, Future},
     io::Error as IoError,
+    path::PathBuf,
 };
 
 use await_time::AwaitTime;
 use flume::SendError;
 use futures_util::stream::{once, Stream, StreamExt, TryStreamExt};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tonic::{
     metadata::{errors::InvalidMetadataValue, MetadataValue},
@@ -95,6 +97,17 @@ pub mod await_time {
             Self(Duration::from_secs(5))
         }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GoogleCloudSpeechConfig {
+    /// Path to service credentials file.
+    pub(crate) service_account_path: PathBuf,
+
+    /// Max await time in seconds between AudioSocket audio messages.
+    ///
+    /// Valid values are `0..=10`.
+    pub(crate) max_await_time: Option<u64>,
 }
 
 pub struct GoogleCloudSpeech {

@@ -9,9 +9,9 @@ use thiserror::Error;
 use toml::{de::Error as TomlError, from_slice};
 
 #[cfg(feature = "gcs")]
-use crate::gcs::config::GoogleCloudSpeechConfig;
+use crate::gcs::GoogleCloudSpeechConfig;
 #[cfg(feature = "gctts")]
-use crate::gctts::config::GoogleCloudTextToSpeechConfig;
+use crate::gctts::GoogleCloudTextToSpeechConfig;
 
 #[cfg(test)]
 pub static TEST_CONFIG: once_cell::sync::Lazy<Config> = once_cell::sync::Lazy::new(|| Config {

@@ -2,7 +2,7 @@
 //! speech recognition, dynamic configuration exchange, audio playback and call management.
 
 // Return Future from traits
-#![feature(type_alias_impl_trait)]
+#![feature(min_type_alias_impl_trait)]
 // We'll silence Clippy on this one because of tracing macro
 #![allow(clippy::unit_arg)]
 #![warn(missing_docs)]

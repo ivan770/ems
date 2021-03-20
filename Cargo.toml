@@ -34,7 +34,7 @@ thiserror = { version = "1" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "io-util", "time", "signal"] }
-tokio-tungstenite = { version = "0.13" }
+tokio-tungstenite = { version = "0.14" }
 toml = { version = "0.5" }
 tracing = { version = "0.1", features = ["attributes"] }
 tracing-futures = { version = "0.2" }

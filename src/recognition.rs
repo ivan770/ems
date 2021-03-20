@@ -9,7 +9,7 @@ use futures_util::sink::Sink;
 use pin_project::pin_project;
 use uuid::Uuid;
 
-use crate::{config::Config, db::HandlerDatabase};
+use crate::{config::Config, db::HandlerDatabase, ws::WsNotification};
 
 /// Speech recognition request, that contains audio to be recognized.
 ///
@@ -85,7 +85,10 @@ impl<E> Sink<SpeechRecognitionResponse> for SpeechRecognitionSink<E> {
         let this = self.project();
 
         this.database
-            .add_transcription(*this.id, response.transcription);
+            .add_notification(WsNotification::Transcription(
+                *this.id,
+                response.transcription,
+            ));
 
         Ok(())
     }

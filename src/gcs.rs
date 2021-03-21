@@ -30,7 +30,7 @@ use crate::{
     },
     handler::CHUNK_SIZE,
     recognition::{SpeechRecognitionConfig, SpeechRecognitionRequest, SpeechRecognitionResponse},
-    service::{from_config::FromConfig, Service},
+    service::{FromConfig, Service},
 };
 
 const DOMAIN_NAME: &str = "speech.googleapis.com";

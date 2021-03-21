@@ -1,7 +1,6 @@
 use std::{error::Error, future::Future, sync::Arc};
 
 use flume::Sender;
-use from_config::FromConfig;
 use futures_util::{
     sink::Sink,
     stream::{Stream, TryStream},
@@ -26,9 +25,6 @@ use crate::{
 use crate::{
     config::SpeechSynthesisDriver, gctts::GoogleCloudTextToSpeech, synthesis::SpeechSynthesisSink,
 };
-
-/// FromConfig trait.
-pub mod from_config;
 
 /// A generic service definition.
 ///
@@ -58,6 +54,25 @@ where
 
     /// Start process of audio streaming.
     fn stream(self, stream: S) -> Self::Fut;
+}
+
+/// Create a [`Service`] from provided config, possibly failing to do so.
+///
+/// This is an async version of [`TryFrom`].
+///
+/// [`Service`]: crate::service::Service
+/// [`TryFrom`]: std::convert::TryFrom
+pub trait FromConfig<'c>
+where
+    Self: Sized,
+{
+    type Config: 'c;
+
+    type Error: Error + Send + Sync + 'static;
+
+    type Fut: Future<Output = Result<Self, Self::Error>>;
+
+    fn from_config(config: Self::Config) -> Self::Fut;
 }
 
 #[instrument(skip(config, stream, sink), err)]

@@ -20,6 +20,7 @@ use crate::{
     config::Config,
     db::HandlerDatabase,
     handler::MessageHandlerAction,
+    recognition::SpeechRecognitionConfig,
     service::{spawn_speech_synthesis, SpawnedSpeechSynthesis},
     synthesis::SpeechSynthesisRequest,
 };
@@ -54,7 +55,7 @@ enum WsAction {
         /// SSML to synthesize.
         ssml: String,
 
-        /// Language and region of of the voice expressed as a BCP-47 language tag.
+        /// Language and region of the voice expressed as a BCP-47 language tag.
         language_code: String,
 
         /// Preferred voice gender.
@@ -79,6 +80,18 @@ enum WsAction {
 
     /// Handler requests recognition config for current call.
     RecognitionConfigRequest,
+
+    /// Recognition config provided to handler.
+    RecognitionConfig {
+        /// Language and region of the voice expressed as a BCP-47 language tag.
+        language: String,
+
+        /// Should EMS request recognition with profanity filtering.
+        profanity_filter: bool,
+
+        /// Should EMS request adding punctuation to recognition results if possible.
+        punctuation: bool,
+    },
 }
 
 /// Errors, that may happen during WebSocket connection.
@@ -193,6 +206,23 @@ async fn accept_messages<S>(
                             speaking_rate,
                             pitch,
                         });
+                    }
+                    (
+                        WsAction::RecognitionConfig {
+                            language,
+                            profanity_filter,
+                            punctuation,
+                        },
+                        _,
+                    ) => {
+                        database.send(
+                            &message.id,
+                            MessageHandlerAction::RecognitionConfig(SpeechRecognitionConfig {
+                                language,
+                                profanity_filter,
+                                punctuation,
+                            }),
+                        );
                     }
                     _ => {}
                 },

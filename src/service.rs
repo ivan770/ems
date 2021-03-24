@@ -14,7 +14,7 @@ use {flume::unbounded, tokio::spawn};
 use crate::{
     config::Config,
     db::HandlerDatabase,
-    recognition::{SpeechRecognitionConfig, SpeechRecognitionRequest},
+    recognition::{SpeechRecognitionRequest, SpeechRecognitionServiceConfig},
     synthesis::SpeechSynthesisRequest,
 };
 #[cfg(feature = "gcs")]
@@ -111,7 +111,7 @@ where
 #[allow(unused_variables)]
 pub fn spawn_speech_recognition(
     id: Uuid,
-    config: SpeechRecognitionConfig<'static>,
+    config: SpeechRecognitionServiceConfig<'static>,
     database: Arc<HandlerDatabase>,
 ) -> Option<SpawnedSpeechRecognition> {
     match config.application_config.recognition_driver() {

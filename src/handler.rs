@@ -5,6 +5,8 @@ use flume::{unbounded, Receiver};
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufWriter},
     select,
+    sync::oneshot,
+    time::timeout,
 };
 use tracing::{debug, instrument, warn};
 use uuid::Uuid;
@@ -12,10 +14,13 @@ use uuid::Uuid;
 use crate::{
     config::Config,
     db::HandlerDatabase,
-    recognition::{SpeechRecognitionConfig, SpeechRecognitionRequest},
+    recognition::{
+        SpeechRecognitionConfig, SpeechRecognitionRequest, SpeechRecognitionServiceConfig,
+    },
     server::ServerError,
     service::{spawn_speech_recognition, SpawnedSpeechRecognition},
     stream::MessageStream,
+    ws::WsNotification
 };
 
 /// Inner [`BufWriter`] capacity for writing data back to AudioSocket client.
@@ -85,6 +90,9 @@ pub enum MessageHandlerAction {
 
     /// Play audio on channel.
     Play(Vec<u8>),
+
+    /// Provide speech recognition config to handler
+    RecognitionConfig(SpeechRecognitionConfig),
 }
 
 /// Message handler, that has a unique identifier attached.
@@ -128,15 +136,20 @@ where
     /// Listen for incoming messages from [`MessageStream`], and execute [`MessageHandlerAction`] events.
     #[instrument(skip(self), err, name = "id_listen", fields(id = %self.id))]
     pub async fn listen(mut self, max_time: Duration) -> Result<(), ServerError> {
+        self.database.add_notification(WsNotification::RecognitionConfigRequest(self.id));
+        
+        let (recognition_sender, recognition_receiver) = oneshot::channel();
+
         let result = select! {
             res = Self::handle_messages(
                 self.id,
                 self.config,
                 &self.database,
+                recognition_receiver,
                 &mut self.stream,
                 max_time
             ) => Err(res),
-            res = Self::action_listen(&self.channel, self.sink) => res,
+            res = Self::action_listen(&self.channel, recognition_sender, self.sink) => res,
         };
 
         match result {
@@ -150,10 +163,12 @@ where
         id: Uuid,
         config: &'static Config,
         database: &'a Arc<HandlerDatabase>,
+        recognition_receiver: oneshot::Receiver<SpeechRecognitionConfig>,
         stream: &'a mut MessageStream<'s, ST>,
         max_time: Duration,
     ) -> ServerError {
-        let recognition = prepare_recognition_service(id, config, database.clone());
+        let recognition =
+            prepare_recognition_service(id, config, database.clone(), recognition_receiver).await;
 
         loop {
             match (stream.recv(max_time).await, recognition.as_ref()) {
@@ -189,8 +204,11 @@ where
     /// Listen for incoming actions from channel, and send call events (hangup, audio playback, etc.) to sink.
     async fn action_listen(
         channel: &Receiver<MessageHandlerAction>,
+        recognition_sender: oneshot::Sender<SpeechRecognitionConfig>,
         sink: &mut SI,
     ) -> Result<(), ServerError> {
+        // We use Option here as a cell to silence compiler because of taking oneshot::Sender by value in send method.
+        let mut recognition_sender = Some(recognition_sender);
         let mut sink = BufWriter::with_capacity(AUDIO_BUF_CAPACITY, sink);
 
         while let Ok(event) = channel.recv_async().await {
@@ -198,6 +216,11 @@ where
                 MessageHandlerAction::Hangup => {
                     sink.write_all(&TryInto::<Vec<u8>>::try_into(Message::Terminate)?)
                         .await?;
+                }
+                MessageHandlerAction::RecognitionConfig(config) => {
+                    if let Some(sender) = recognition_sender.take() {
+                        sender.send(config).ok();
+                    }
                 }
                 MessageHandlerAction::Play(audio) => {
                     let chunks = audio.chunks_exact(CHUNK_SIZE);
@@ -235,16 +258,33 @@ impl<'c, 's, ST, SI> Drop for IdentifiableMessageHandler<'c, 's, ST, SI> {
     }
 }
 
-fn prepare_recognition_service(
+async fn prepare_recognition_service(
     id: Uuid,
-    config: &'static Config,
+    application_config: &'static Config,
     database: Arc<HandlerDatabase>,
+    recognition_receiver: oneshot::Receiver<SpeechRecognitionConfig>,
 ) -> Option<SpawnedSpeechRecognition> {
-    let recognition_config = SpeechRecognitionConfig {
-        application_config: config,
-        language: String::from("ru-RU"),
-        profanity_filter: false,
-        punctuation: false,
+    let recognition_config = timeout(
+        application_config.recognition_config_timeout(),
+        recognition_receiver,
+    )
+    .await
+    .map(Result::ok)
+    .ok()
+    .flatten()
+    .or_else(|| {
+        println!("Using config from toml");
+
+        application_config
+            .fallback_recognition_config()
+            .as_ref()
+            .map(Clone::clone)
+    })
+    .unwrap_or_default();
+
+    let recognition_config = SpeechRecognitionServiceConfig {
+        application_config,
+        recognition_config,
     };
 
     spawn_speech_recognition(id, recognition_config, database)

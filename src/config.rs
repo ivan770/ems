@@ -19,7 +19,7 @@ pub static TEST_CONFIG: once_cell::sync::Lazy<Config> = once_cell::sync::Lazy::n
     audiosocket_addr: std::str::FromStr::from_str("127.0.0.1:12345").unwrap(),
     websocket_addr: std::str::FromStr::from_str("127.0.0.1:12346").unwrap(),
     message_timeout: 10,
-    recognition_config_timeout: 10,
+    recognition_config_timeout: 1,
     recognition_driver: None,
     synthesis_driver: None,
     #[cfg(feature = "gcs")]

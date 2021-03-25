@@ -20,7 +20,7 @@ use crate::{
     server::ServerError,
     service::{spawn_speech_recognition, SpawnedSpeechRecognition},
     stream::MessageStream,
-    ws::WsNotification
+    ws::WsNotification,
 };
 
 /// Inner [`BufWriter`] capacity for writing data back to AudioSocket client.
@@ -136,8 +136,9 @@ where
     /// Listen for incoming messages from [`MessageStream`], and execute [`MessageHandlerAction`] events.
     #[instrument(skip(self), err, name = "id_listen", fields(id = %self.id))]
     pub async fn listen(mut self, max_time: Duration) -> Result<(), ServerError> {
-        self.database.add_notification(WsNotification::RecognitionConfigRequest(self.id));
-        
+        self.database
+            .add_notification(WsNotification::RecognitionConfigRequest(self.id));
+
         let (recognition_sender, recognition_receiver) = oneshot::channel();
 
         let result = select! {
@@ -273,12 +274,10 @@ async fn prepare_recognition_service(
     .ok()
     .flatten()
     .or_else(|| {
-        println!("Using config from toml");
-
         application_config
             .fallback_recognition_config()
             .as_ref()
-            .map(Clone::clone)
+            .cloned()
     })
     .unwrap_or_default();
 
@@ -347,6 +346,9 @@ mod tests {
             .write_all(&TryInto::<Vec<u8>>::try_into(Message::Identifier(Uuid::nil())).unwrap())
             .await
             .unwrap();
+
+        sleep(Duration::from_secs(1)).await;
+
         sender
             .write_all(&TryInto::<Vec<u8>>::try_into(Message::Identifier(Uuid::nil())).unwrap())
             .await

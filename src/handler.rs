@@ -1,7 +1,6 @@
 use std::{convert::TryInto, io::ErrorKind, sync::Arc, time::Duration};
 
 use audiosocket::Message;
-use flume::{unbounded, Receiver};
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufWriter},
     select,
@@ -101,7 +100,7 @@ pub enum MessageHandlerAction {
 pub struct IdentifiableMessageHandler<'c, 's, ST, SI> {
     id: Uuid,
     config: &'c Config,
-    channel: Receiver<MessageHandlerAction>,
+    channel: flume::Receiver<MessageHandlerAction>,
     database: Arc<HandlerDatabase>,
     stream: MessageStream<'s, ST>,
     sink: &'s mut SI,
@@ -119,7 +118,7 @@ where
         database: Arc<HandlerDatabase>,
         sink: &'s mut SI,
     ) -> Self {
-        let (sender, receiver) = unbounded();
+        let (sender, receiver) = flume::unbounded();
 
         database.add_handler(id, sender);
 
@@ -204,7 +203,7 @@ where
 
     /// Listen for incoming actions from channel, and send call events (hangup, audio playback, etc.) to sink.
     async fn action_listen(
-        channel: &Receiver<MessageHandlerAction>,
+        channel: &flume::Receiver<MessageHandlerAction>,
         recognition_sender: oneshot::Sender<SpeechRecognitionConfig>,
         sink: &mut SI,
     ) -> Result<(), ServerError> {

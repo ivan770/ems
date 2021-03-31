@@ -87,9 +87,11 @@ enum WsAction {
         language: String,
 
         /// Should EMS request recognition with profanity filtering.
+        #[serde(default)]
         profanity_filter: bool,
 
         /// Should EMS request adding punctuation to recognition results if possible.
+        #[serde(default)]
         punctuation: bool,
     },
 }
@@ -430,5 +432,61 @@ mod tests {
         send_test(expect![[r#"
             "{\"id\":\"00000000-0000-0000-0000-000000000000\",\"data\":\"RecognitionConfigRequest\"}"
         "#]], WsNotification::RecognitionConfigRequest(TEST_ID)).await;
+    }
+
+    #[tokio::test]
+    async fn accept_recognition_config() {
+        accept_test(
+            expect![[r#"
+                RecognitionConfig(
+                    SpeechRecognitionConfig {
+                        language: "ru-RU",
+                        profanity_filter: true,
+                        punctuation: true,
+                    },
+                )
+            "#]],
+            format!(
+                r#"
+{{
+    "id": "{}",
+    "data": {{"RecognitionConfig": {{
+        "language": "ru-RU",
+        "profanity_filter": true,
+        "punctuation": true
+    }}}}
+}}
+                "#,
+                TEST_ID
+            ),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn accept_partial_recognition_config() {
+        accept_test(
+            expect![[r#"
+                RecognitionConfig(
+                    SpeechRecognitionConfig {
+                        language: "ru-RU",
+                        profanity_filter: false,
+                        punctuation: false,
+                    },
+                )
+            "#]],
+            format!(
+                r#"
+{{
+    "id": "{}",
+    "data": {{"RecognitionConfig": {{
+        "language": "ru-RU"
+    }}}}
+}}
+                "#,
+                TEST_ID
+            ),
+        )
+        .await;
     }
 }

@@ -269,9 +269,8 @@ async fn prepare_recognition_service(
         recognition_receiver,
     )
     .await
-    .map(Result::ok)
     .ok()
-    .flatten()
+    .and_then(Result::ok)
     .or_else(|| {
         application_config
             .fallback_recognition_config()

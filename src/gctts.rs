@@ -23,7 +23,7 @@ use crate::{
         },
         AUTH_SCOPE, CERTS,
     },
-    service::{from_config::FromConfig, Service},
+    service::{FromConfig, Service},
     synthesis::{SpeechSynthesisRequest, SpeechSynthesisResponse, SynthesisVoiceGender},
 };
 

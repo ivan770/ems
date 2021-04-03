@@ -12,22 +12,29 @@ use toml::{de::Error as TomlError, from_slice};
 use crate::gcs::GoogleCloudSpeechConfig;
 #[cfg(feature = "gctts")]
 use crate::gctts::GoogleCloudTextToSpeechConfig;
+use crate::recognition::SpeechRecognitionConfig;
 
 #[cfg(test)]
 pub static TEST_CONFIG: once_cell::sync::Lazy<Config> = once_cell::sync::Lazy::new(|| Config {
     audiosocket_addr: std::str::FromStr::from_str("127.0.0.1:12345").unwrap(),
     websocket_addr: std::str::FromStr::from_str("127.0.0.1:12346").unwrap(),
     message_timeout: 10,
+    recognition_config_timeout: 1,
     recognition_driver: None,
     synthesis_driver: None,
     #[cfg(feature = "gcs")]
     gcs_config: None,
     #[cfg(feature = "gctts")]
     gctts_config: None,
+    fallback_recognition_config: None,
     loopback_audio: false,
 });
 
 const fn default_message_timeout() -> u64 {
+    3
+}
+
+const fn default_recognition_config_timeout() -> u64 {
     3
 }
 
@@ -86,6 +93,10 @@ pub struct Config {
     #[serde(default = "default_message_timeout")]
     message_timeout: u64,
 
+    /// Max amount of seconds to wait for handler speech recognition config.
+    #[serde(default = "default_recognition_config_timeout")]
+    recognition_config_timeout: u64,
+
     /// Recognition driver to be used.
     ///
     /// [`None`] by default.
@@ -104,6 +115,9 @@ pub struct Config {
     #[cfg(feature = "gctts")]
     #[serde(rename = "gctts")]
     gctts_config: Option<GoogleCloudTextToSpeechConfig>,
+
+    #[serde(rename = "recognition_fallback")]
+    fallback_recognition_config: Option<SpeechRecognitionConfig>,
 
     /// Send all received audio back.
     ///
@@ -140,6 +154,11 @@ impl Config {
         Duration::from_secs(self.message_timeout)
     }
 
+    /// Get max await time for recognition config response.
+    pub fn recognition_config_timeout(&self) -> Duration {
+        Duration::from_secs(self.recognition_config_timeout)
+    }
+
     /// Get configured speech recognition driver.
     ///
     /// [`None`], if speech recognition is disabled.
@@ -167,6 +186,11 @@ impl Config {
     #[cfg(feature = "gctts")]
     pub fn gctts_config(&self) -> &Option<GoogleCloudTextToSpeechConfig> {
         &self.gctts_config
+    }
+
+    /// Get fallback recognition config, in case if client doesn't respond fast enough.
+    pub fn fallback_recognition_config(&self) -> &Option<SpeechRecognitionConfig> {
+        &self.fallback_recognition_config
     }
 
     /// Get audio loopback configuration setting.

@@ -4,14 +4,14 @@ use flume::Sender;
 use unlimited::Queue;
 use uuid::Uuid;
 
-use crate::handler::MessageHandlerAction;
+use crate::{handler::MessageHandlerAction, ws::WsNotification};
 
 /// Message handler database.
 ///
 /// Can be used to send various events to message handlers (call hangup, audio playback, etc.)
 #[derive(Default)]
 pub struct HandlerDatabase {
-    transcription: Queue<(Uuid, String)>,
+    ws_notifications: Queue<WsNotification>,
     // TODO: Check if it's possible to use Queue here to avoid double-Arc.
     handler_map: DashMap<Uuid, Sender<MessageHandlerAction>>,
 }
@@ -29,16 +29,16 @@ impl HandlerDatabase {
         self.handler_map.remove(&id);
     }
 
-    /// Add new recognized speech transcription.
-    pub fn add_transcription(&self, id: Uuid, transcription: String) {
-        self.transcription.push((id, transcription));
+    /// Add new WebSocket notification.
+    pub fn add_notification(&self, notification: WsNotification) {
+        self.ws_notifications.push(notification);
     }
 
-    /// Receive new recognized speech transcription.
+    /// Receive new WebSocket notification.
     ///
     /// This method will yield to executor if there are no transcriptions in queue.
-    pub async fn recv_transcription(&self) -> (Uuid, String) {
-        self.transcription.pop().await
+    pub async fn recv_notification(&self) -> WsNotification {
+        self.ws_notifications.pop().await
     }
 
     /// Send an action to a message handler.
@@ -58,7 +58,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::HandlerDatabase;
-    use crate::handler::MessageHandlerAction;
+    use crate::{handler::MessageHandlerAction, ws::WsNotification};
 
     const TEST_ID: Uuid = Uuid::nil();
 
@@ -81,10 +81,10 @@ mod tests {
     async fn test_transcription() {
         let database = HandlerDatabase::default();
 
-        database.add_transcription(TEST_ID, String::from("test"));
+        database.add_notification(WsNotification::Transcription(TEST_ID, String::from("test")));
 
         assert!(
-            matches!(database.recv_transcription().await, (id, message) if id == TEST_ID && message == String::from("test"))
+            matches!(database.recv_notification().await, WsNotification::Transcription(id, message) if id == TEST_ID && message == String::from("test"))
         );
     }
 }

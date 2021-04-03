@@ -20,9 +20,19 @@ use crate::{
     config::Config,
     db::HandlerDatabase,
     handler::MessageHandlerAction,
+    recognition::SpeechRecognitionConfig,
     service::{spawn_speech_synthesis, SpawnedSpeechSynthesis},
     synthesis::SpeechSynthesisRequest,
 };
+
+/// Internal WebSocket notification from server components (new transcriptions, recognition config request, etc.)
+pub enum WsNotification {
+    /// Pass a new transcription to WebSocket client
+    Transcription(Uuid, String),
+
+    /// Handler with provided UUID requests a recognition config
+    RecognitionConfigRequest(Uuid),
+}
 
 /// Generic WebSocket message for both requests and responses.
 #[derive(Serialize, Deserialize)]
@@ -45,7 +55,7 @@ enum WsAction {
         /// SSML to synthesize.
         ssml: String,
 
-        /// Language and region of of the voice expressed as a BCP-47 language tag.
+        /// Language and region of the voice expressed as a BCP-47 language tag.
         language_code: String,
 
         /// Preferred voice gender.
@@ -67,6 +77,23 @@ enum WsAction {
 
     /// Speech transcription part of current call.
     Transcription(String),
+
+    /// Handler requests recognition config for current call.
+    RecognitionConfigRequest,
+
+    /// Recognition config provided to handler.
+    RecognitionConfig {
+        /// Language and region of the voice expressed as a BCP-47 language tag.
+        language: String,
+
+        /// Should EMS request recognition with profanity filtering.
+        #[serde(default)]
+        profanity_filter: bool,
+
+        /// Should EMS request adding punctuation to recognition results if possible.
+        #[serde(default)]
+        punctuation: bool,
+    },
 }
 
 /// Errors, that may happen during WebSocket connection.
@@ -182,6 +209,23 @@ async fn accept_messages<S>(
                             pitch,
                         });
                     }
+                    (
+                        WsAction::RecognitionConfig {
+                            language,
+                            profanity_filter,
+                            punctuation,
+                        },
+                        _,
+                    ) => {
+                        database.send(
+                            &message.id,
+                            MessageHandlerAction::RecognitionConfig(SpeechRecognitionConfig {
+                                language,
+                                profanity_filter,
+                                punctuation,
+                            }),
+                        );
+                    }
                     _ => {}
                 },
                 Err(e) => error!(error = %e, "Invalid WebSocket message"),
@@ -197,13 +241,17 @@ where
     S: Sink<Message, Error = TungsteniteError> + Unpin,
 {
     loop {
-        let (id, transcription) = database.recv_transcription().await;
+        let (id, data) = match database.recv_notification().await {
+            WsNotification::Transcription(id, transcription) => {
+                (id, WsAction::Transcription(transcription))
+            }
+            WsNotification::RecognitionConfigRequest(id) => {
+                (id, WsAction::RecognitionConfigRequest)
+            }
+        };
 
-        sink.send(Message::Text(to_string(&WsMessage {
-            id,
-            data: WsAction::Transcription(transcription),
-        })?))
-        .await?;
+        sink.send(Message::Text(to_string(&WsMessage { id, data })?))
+            .await?
     }
 }
 
@@ -217,16 +265,16 @@ mod tests {
     };
 
     use base64::encode;
+    use expect_test::{expect, Expect};
     use flume::{unbounded, Sender};
     use futures_util::{sink::Sink, stream::once};
-    use serde_json::from_str;
     use tokio::spawn;
     use tokio_tungstenite::tungstenite::Message;
     use tracing_test::traced_test;
     use uuid::Uuid;
 
-    use super::{accept_messages, send_transcriptions, WsAction, WsMessage};
-    use crate::{db::HandlerDatabase, handler::MessageHandlerAction};
+    use super::{accept_messages, send_transcriptions, WsNotification};
+    use crate::db::HandlerDatabase;
 
     const TEST_ID: Uuid = Uuid::nil();
 
@@ -262,16 +310,53 @@ mod tests {
         }
     }
 
+    async fn send_test(expect: Expect, notification: WsNotification) {
+        let (sender, receiver) = unbounded();
+
+        let sink = TestSink::new(sender);
+
+        let database = HandlerDatabase::default();
+
+        database.add_notification(notification);
+
+        spawn(async move {
+            send_transcriptions(&database, sink).await.unwrap();
+        });
+
+        match receiver.recv_async().await.unwrap() {
+            Message::Text(text) => {
+                expect.assert_debug_eq(&text);
+            }
+            _ => panic!("Invalid message type"),
+        }
+    }
+
+    async fn accept_test(expect: Expect, message: String) {
+        let stream = once(ready(Ok(Message::Text(message))));
+
+        let database = HandlerDatabase::default();
+
+        let (sender, receiver) = unbounded();
+
+        database.add_handler(TEST_ID, sender);
+
+        accept_messages(&database, stream, &None).await;
+
+        let recv = receiver.recv().unwrap();
+
+        expect.assert_debug_eq(&recv);
+    }
+
     #[tokio::test]
     #[traced_test]
     async fn accept_invalid_ws_message() {
         let stream = once(ready(Ok(Message::Text(format!(
             r#"
-            {{
-                "id": "{}",
-                "data": "InvalidMessageData"
-            }}
-        "#,
+{{
+    "id": "{}",
+    "data": "InvalidMessageData"
+}}
+            "#,
             TEST_ID
         )))));
 
@@ -288,79 +373,120 @@ mod tests {
 
     #[tokio::test]
     async fn accept_ws_hangup() {
-        let stream = once(ready(Ok(Message::Text(format!(
-            r#"
-            {{
-                "id": "{}",
-                "data": "Hangup"
-            }}
-        "#,
-            TEST_ID
-        )))));
-
-        let database = HandlerDatabase::default();
-
-        let (sender, receiver) = unbounded();
-
-        database.add_handler(TEST_ID, sender);
-
-        accept_messages(&database, stream, &None).await;
-
-        let recv = receiver.recv().unwrap();
-
-        assert!(matches!(recv, MessageHandlerAction::Hangup));
+        accept_test(
+            expect![[r#"
+                Hangup
+            "#]],
+            format!(
+                r#"
+{{
+    "id": "{}",
+    "data": "Hangup"
+}}
+                "#,
+                TEST_ID
+            ),
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn accept_ws_audio() {
-        let stream = once(ready(Ok(Message::Text(format!(
-            r#"
-            {{
-                "id": "{}",
-                "data": {{
-                    "Play": "{}"
-                }}
-            }}
-        "#,
-            TEST_ID,
-            encode(&[1, 2, 3, 4, 5])
-        )))));
-
-        let database = HandlerDatabase::default();
-
-        let (sender, receiver) = unbounded();
-
-        database.add_handler(TEST_ID, sender);
-
-        accept_messages(&database, stream, &None).await;
-
-        let recv = receiver.recv().unwrap();
-
-        assert!(matches!(recv, MessageHandlerAction::Play(audio) if audio == vec![1, 2, 3, 4, 5]));
+        accept_test(
+            expect![[r#"
+                Play(
+                    [
+                        1,
+                        2,
+                        3,
+                        4,
+                        5,
+                    ],
+                )
+            "#]],
+            format!(
+                r#"
+{{
+    "id": "{}",
+    "data": {{
+        "Play": "{}"
+    }}
+}}
+                "#,
+                TEST_ID,
+                encode(&[1, 2, 3, 4, 5])
+            ),
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn send_ws_transcriptions() {
-        let (sender, receiver) = unbounded();
+        send_test(expect![[r#"
+            "{\"id\":\"00000000-0000-0000-0000-000000000000\",\"data\":{\"Transcription\":\"Hello, world\"}}"
+        "#]], WsNotification::Transcription(TEST_ID, String::from("Hello, world"))).await;
+    }
 
-        let sink = TestSink::new(sender);
+    #[tokio::test]
+    async fn send_recognition_config_requests() {
+        send_test(expect![[r#"
+            "{\"id\":\"00000000-0000-0000-0000-000000000000\",\"data\":\"RecognitionConfigRequest\"}"
+        "#]], WsNotification::RecognitionConfigRequest(TEST_ID)).await;
+    }
 
-        let database = HandlerDatabase::default();
+    #[tokio::test]
+    async fn accept_recognition_config() {
+        accept_test(
+            expect![[r#"
+                RecognitionConfig(
+                    SpeechRecognitionConfig {
+                        language: "ru-RU",
+                        profanity_filter: true,
+                        punctuation: true,
+                    },
+                )
+            "#]],
+            format!(
+                r#"
+{{
+    "id": "{}",
+    "data": {{"RecognitionConfig": {{
+        "language": "ru-RU",
+        "profanity_filter": true,
+        "punctuation": true
+    }}}}
+}}
+                "#,
+                TEST_ID
+            ),
+        )
+        .await;
+    }
 
-        database.add_transcription(TEST_ID, String::from("Hello, world"));
-
-        spawn(async move {
-            send_transcriptions(&database, sink).await.unwrap();
-        });
-
-        match receiver.recv_async().await.unwrap() {
-            Message::Text(text) => {
-                let ws_message = from_str::<WsMessage>(&text).unwrap();
-                assert!(
-                    matches!(ws_message, WsMessage { id, data: WsAction::Transcription(text) } if id == TEST_ID && text == String::from("Hello, world"))
-                );
-            }
-            _ => panic!("Invalid message type"),
-        }
+    #[tokio::test]
+    async fn accept_partial_recognition_config() {
+        accept_test(
+            expect![[r#"
+                RecognitionConfig(
+                    SpeechRecognitionConfig {
+                        language: "ru-RU",
+                        profanity_filter: false,
+                        punctuation: false,
+                    },
+                )
+            "#]],
+            format!(
+                r#"
+{{
+    "id": "{}",
+    "data": {{"RecognitionConfig": {{
+        "language": "ru-RU"
+    }}}}
+}}
+                "#,
+                TEST_ID
+            ),
+        )
+        .await;
     }
 }

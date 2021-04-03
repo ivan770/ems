@@ -29,8 +29,10 @@ use crate::{
         AUTH_SCOPE, CERTS,
     },
     handler::CHUNK_SIZE,
-    recognition::{SpeechRecognitionConfig, SpeechRecognitionRequest, SpeechRecognitionResponse},
-    service::{from_config::FromConfig, Service},
+    recognition::{
+        SpeechRecognitionRequest, SpeechRecognitionResponse, SpeechRecognitionServiceConfig,
+    },
+    service::{FromConfig, Service},
 };
 
 const DOMAIN_NAME: &str = "speech.googleapis.com";
@@ -253,7 +255,7 @@ impl<'c> FromConfig<'c> for GoogleCloudSpeech
 where
     Self: Sized,
 {
-    type Config = SpeechRecognitionConfig<'c>;
+    type Config = SpeechRecognitionServiceConfig<'c>;
 
     type Error = CloudSpeechError;
 
@@ -278,9 +280,9 @@ where
             let access_token = authenticator.token(&[AUTH_SCOPE]).await?;
 
             Ok(GoogleCloudSpeech::new(
-                config.language,
-                config.punctuation,
-                config.profanity_filter,
+                config.recognition_config.language,
+                config.recognition_config.punctuation,
+                config.recognition_config.profanity_filter,
                 config
                     .application_config
                     .gcs_config()

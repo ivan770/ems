@@ -7,9 +7,10 @@ use std::{
 
 use futures_util::sink::Sink;
 use pin_project::pin_project;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{config::Config, db::HandlerDatabase};
+use crate::{config::Config, db::HandlerDatabase, ws::WsNotification};
 
 /// Speech recognition request, that contains audio to be recognized.
 ///
@@ -25,20 +26,30 @@ pub struct SpeechRecognitionResponse {
     pub transcription: String,
 }
 
-/// Speech recognition config.
+/// Speech recognition service config.
 ///
 /// Unlike speech synthesis service, speech recognition is created for each
 /// new handler, thus all configuration is done once per initialization,
 /// unlike once per each request as with speech synthesis.
 ///
-/// This configuration contains both [`application config`] and speech recognition
-/// specific options (language, recognition model, etc.)
+/// This struct contains both [`application config`] and speech recognition
+/// specific options via [`SpeechRecognitionConfig`]
 ///
 /// [`application config`]: Config
-pub struct SpeechRecognitionConfig<'c> {
+pub struct SpeechRecognitionServiceConfig<'c> {
     /// Application configuration.
     pub application_config: &'c Config,
 
+    /// Speech recognition specific options
+    pub recognition_config: SpeechRecognitionConfig,
+}
+
+/// Speech recognition specific options
+///
+/// For more details see [`SpeechRecognitionServiceConfig`].
+#[derive(Serialize, Deserialize, Clone)]
+#[cfg_attr(test, derive(Debug))]
+pub struct SpeechRecognitionConfig {
     /// Language that is being recognized.
     pub language: String,
 
@@ -47,6 +58,16 @@ pub struct SpeechRecognitionConfig<'c> {
 
     /// Enable punctuation guessing (if provider supports it)?
     pub punctuation: bool,
+}
+
+impl Default for SpeechRecognitionConfig {
+    fn default() -> Self {
+        SpeechRecognitionConfig {
+            language: String::from("en-US"),
+            profanity_filter: false,
+            punctuation: false,
+        }
+    }
 }
 
 #[pin_project]
@@ -85,7 +106,10 @@ impl<E> Sink<SpeechRecognitionResponse> for SpeechRecognitionSink<E> {
         let this = self.project();
 
         this.database
-            .add_transcription(*this.id, response.transcription);
+            .add_notification(WsNotification::Transcription(
+                *this.id,
+                response.transcription,
+            ));
 
         Ok(())
     }

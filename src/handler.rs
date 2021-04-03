@@ -1,10 +1,11 @@
 use std::{convert::TryInto, io::ErrorKind, sync::Arc, time::Duration};
 
 use audiosocket::Message;
-use flume::{unbounded, Receiver};
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufWriter},
     select,
+    sync::oneshot,
+    time::{sleep, timeout},
 };
 use tracing::{debug, instrument, warn};
 use uuid::Uuid;
@@ -12,17 +13,22 @@ use uuid::Uuid;
 use crate::{
     config::Config,
     db::HandlerDatabase,
-    recognition::{SpeechRecognitionConfig, SpeechRecognitionRequest},
+    recognition::{
+        SpeechRecognitionConfig, SpeechRecognitionRequest, SpeechRecognitionServiceConfig,
+    },
     server::ServerError,
     service::{spawn_speech_recognition, SpawnedSpeechRecognition},
     stream::MessageStream,
+    ws::WsNotification,
 };
-
-/// Inner [`BufWriter`] capacity for writing data back to AudioSocket client.
-const AUDIO_BUF_CAPACITY: usize = 64 * 1024;
 
 /// Exact chunk size to be used when sending or receiving audio using AudioSocket.
 pub const CHUNK_SIZE: usize = 320;
+
+/// Duration between each AudioSocket audio response tick.
+///
+/// See <https://github.com/CyCoreSystems/audiosocket/blob/807c189aae2b651b779b1e2ce1a17e1ecd364973/chunk.go#L23> for more details.
+const TICK_DURATION: Duration = Duration::from_millis(20);
 
 /// Message handler, that doesn't have any unique identifier.
 ///
@@ -85,6 +91,9 @@ pub enum MessageHandlerAction {
 
     /// Play audio on channel.
     Play(Vec<u8>),
+
+    /// Provide speech recognition config to handler
+    RecognitionConfig(SpeechRecognitionConfig),
 }
 
 /// Message handler, that has a unique identifier attached.
@@ -93,7 +102,7 @@ pub enum MessageHandlerAction {
 pub struct IdentifiableMessageHandler<'c, 's, ST, SI> {
     id: Uuid,
     config: &'c Config,
-    channel: Receiver<MessageHandlerAction>,
+    channel: flume::Receiver<MessageHandlerAction>,
     database: Arc<HandlerDatabase>,
     stream: MessageStream<'s, ST>,
     sink: &'s mut SI,
@@ -111,7 +120,7 @@ where
         database: Arc<HandlerDatabase>,
         sink: &'s mut SI,
     ) -> Self {
-        let (sender, receiver) = unbounded();
+        let (sender, receiver) = flume::unbounded();
 
         database.add_handler(id, sender);
 
@@ -128,15 +137,21 @@ where
     /// Listen for incoming messages from [`MessageStream`], and execute [`MessageHandlerAction`] events.
     #[instrument(skip(self), err, name = "id_listen", fields(id = %self.id))]
     pub async fn listen(mut self, max_time: Duration) -> Result<(), ServerError> {
+        self.database
+            .add_notification(WsNotification::RecognitionConfigRequest(self.id));
+
+        let (recognition_sender, recognition_receiver) = oneshot::channel();
+
         let result = select! {
             res = Self::handle_messages(
                 self.id,
                 self.config,
                 &self.database,
+                recognition_receiver,
                 &mut self.stream,
                 max_time
             ) => Err(res),
-            res = Self::action_listen(&self.channel, self.sink) => res,
+            res = Self::action_listen(&self.channel, recognition_sender, self.sink) => res,
         };
 
         match result {
@@ -150,10 +165,12 @@ where
         id: Uuid,
         config: &'static Config,
         database: &'a Arc<HandlerDatabase>,
+        recognition_receiver: oneshot::Receiver<SpeechRecognitionConfig>,
         stream: &'a mut MessageStream<'s, ST>,
         max_time: Duration,
     ) -> ServerError {
-        let recognition = prepare_recognition_service(id, config, database.clone());
+        let recognition =
+            prepare_recognition_service(id, config, database.clone(), recognition_receiver).await;
 
         loop {
             match (stream.recv(max_time).await, recognition.as_ref()) {
@@ -188,39 +205,45 @@ where
 
     /// Listen for incoming actions from channel, and send call events (hangup, audio playback, etc.) to sink.
     async fn action_listen(
-        channel: &Receiver<MessageHandlerAction>,
+        channel: &flume::Receiver<MessageHandlerAction>,
+        recognition_sender: oneshot::Sender<SpeechRecognitionConfig>,
         sink: &mut SI,
     ) -> Result<(), ServerError> {
-        let mut sink = BufWriter::with_capacity(AUDIO_BUF_CAPACITY, sink);
+        // We use Option here as a cell to silence compiler because of taking oneshot::Sender by value in send method.
+        let mut recognition_sender = Some(recognition_sender);
+        // FIXME: Do we really need this buffer? It maintains CHUNK_SIZE buf internally, yet chunks are CHUNK_SIZE len too.
+        // Buffer maintains 3 bytes for header + CHUNK_SIZE in case if we want to send an audio package.
+        let mut sink = BufWriter::with_capacity(CHUNK_SIZE + 3, sink);
 
         while let Ok(event) = channel.recv_async().await {
             match event {
                 MessageHandlerAction::Hangup => {
                     sink.write_all(&TryInto::<Vec<u8>>::try_into(Message::Terminate)?)
                         .await?;
+
+                    sink.flush().await?;
+                }
+                MessageHandlerAction::RecognitionConfig(config) => {
+                    if let Some(sender) = recognition_sender.take() {
+                        sender.send(config).ok();
+                    }
                 }
                 MessageHandlerAction::Play(audio) => {
                     let chunks = audio.chunks_exact(CHUNK_SIZE);
                     let remainder = chunks.remainder();
 
                     for chunk in chunks {
-                        sink.write_all(&TryInto::<Vec<u8>>::try_into(Message::Audio(Some(chunk)))?)
-                            .await?;
+                        write_audio(&mut sink, chunk).await?;
                     }
 
                     if !remainder.is_empty() {
                         let mut remainder = remainder.to_owned();
                         remainder.resize(CHUNK_SIZE, 0);
 
-                        sink.write_all(&TryInto::<Vec<u8>>::try_into(Message::Audio(Some(
-                            &remainder,
-                        )))?)
-                        .await?;
+                        write_audio(&mut sink, &remainder).await?;
                     }
                 }
             }
-
-            sink.flush().await?;
         }
 
         Err(ServerError::ClientDisconnected(None))
@@ -235,19 +258,46 @@ impl<'c, 's, ST, SI> Drop for IdentifiableMessageHandler<'c, 's, ST, SI> {
     }
 }
 
-fn prepare_recognition_service(
+async fn prepare_recognition_service(
     id: Uuid,
-    config: &'static Config,
+    application_config: &'static Config,
     database: Arc<HandlerDatabase>,
+    recognition_receiver: oneshot::Receiver<SpeechRecognitionConfig>,
 ) -> Option<SpawnedSpeechRecognition> {
-    let recognition_config = SpeechRecognitionConfig {
-        application_config: config,
-        language: String::from("ru-RU"),
-        profanity_filter: false,
-        punctuation: false,
+    let recognition_config = timeout(
+        application_config.recognition_config_timeout(),
+        recognition_receiver,
+    )
+    .await
+    .ok()
+    .and_then(Result::ok)
+    .or_else(|| {
+        application_config
+            .fallback_recognition_config()
+            .as_ref()
+            .cloned()
+    })
+    .unwrap_or_default();
+
+    let recognition_config = SpeechRecognitionServiceConfig {
+        application_config,
+        recognition_config,
     };
 
     spawn_speech_recognition(id, recognition_config, database)
+}
+
+async fn write_audio<S>(mut sink: S, chunk: &[u8]) -> Result<(), ServerError>
+where
+    S: AsyncWrite + Unpin,
+{
+    sleep(TICK_DURATION).await;
+
+    sink.write_all(&TryInto::<Vec<u8>>::try_into(Message::Audio(Some(chunk)))?)
+        .await?;
+    sink.flush().await?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -307,6 +357,9 @@ mod tests {
             .write_all(&TryInto::<Vec<u8>>::try_into(Message::Identifier(Uuid::nil())).unwrap())
             .await
             .unwrap();
+
+        sleep(Duration::from_secs(1)).await;
+
         sender
             .write_all(&TryInto::<Vec<u8>>::try_into(Message::Identifier(Uuid::nil())).unwrap())
             .await

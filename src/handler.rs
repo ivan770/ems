@@ -5,7 +5,7 @@ use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufWriter},
     select,
     sync::oneshot,
-    time::timeout,
+    time::{sleep, timeout},
 };
 use tracing::{debug, instrument, warn};
 use uuid::Uuid;
@@ -22,11 +22,13 @@ use crate::{
     ws::WsNotification,
 };
 
-/// Inner [`BufWriter`] capacity for writing data back to AudioSocket client.
-const AUDIO_BUF_CAPACITY: usize = 64 * 1024;
-
 /// Exact chunk size to be used when sending or receiving audio using AudioSocket.
 pub const CHUNK_SIZE: usize = 320;
+
+/// Duration between each AudioSocket audio response tick.
+///
+/// See <https://github.com/CyCoreSystems/audiosocket/blob/807c189aae2b651b779b1e2ce1a17e1ecd364973/chunk.go#L23> for more details.
+const TICK_DURATION: Duration = Duration::from_millis(20);
 
 /// Message handler, that doesn't have any unique identifier.
 ///
@@ -209,13 +211,17 @@ where
     ) -> Result<(), ServerError> {
         // We use Option here as a cell to silence compiler because of taking oneshot::Sender by value in send method.
         let mut recognition_sender = Some(recognition_sender);
-        let mut sink = BufWriter::with_capacity(AUDIO_BUF_CAPACITY, sink);
+        // FIXME: Do we really need this buffer? It maintains CHUNK_SIZE buf internally, yet chunks are CHUNK_SIZE len too.
+        // Buffer maintains 3 bytes for header + CHUNK_SIZE in case if we want to send an audio package.
+        let mut sink = BufWriter::with_capacity(CHUNK_SIZE + 3, sink);
 
         while let Ok(event) = channel.recv_async().await {
             match event {
                 MessageHandlerAction::Hangup => {
                     sink.write_all(&TryInto::<Vec<u8>>::try_into(Message::Terminate)?)
                         .await?;
+
+                    sink.flush().await?;
                 }
                 MessageHandlerAction::RecognitionConfig(config) => {
                     if let Some(sender) = recognition_sender.take() {
@@ -227,23 +233,17 @@ where
                     let remainder = chunks.remainder();
 
                     for chunk in chunks {
-                        sink.write_all(&TryInto::<Vec<u8>>::try_into(Message::Audio(Some(chunk)))?)
-                            .await?;
+                        write_audio(&mut sink, chunk).await?;
                     }
 
                     if !remainder.is_empty() {
                         let mut remainder = remainder.to_owned();
                         remainder.resize(CHUNK_SIZE, 0);
 
-                        sink.write_all(&TryInto::<Vec<u8>>::try_into(Message::Audio(Some(
-                            &remainder,
-                        )))?)
-                        .await?;
+                        write_audio(&mut sink, &remainder).await?;
                     }
                 }
             }
-
-            sink.flush().await?;
         }
 
         Err(ServerError::ClientDisconnected(None))
@@ -285,6 +285,19 @@ async fn prepare_recognition_service(
     };
 
     spawn_speech_recognition(id, recognition_config, database)
+}
+
+async fn write_audio<S>(mut sink: S, chunk: &[u8]) -> Result<(), ServerError>
+where
+    S: AsyncWrite + Unpin,
+{
+    sleep(TICK_DURATION).await;
+
+    sink.write_all(&TryInto::<Vec<u8>>::try_into(Message::Audio(Some(chunk)))?)
+        .await?;
+    sink.flush().await?;
+
+    Ok(())
 }
 
 #[cfg(test)]

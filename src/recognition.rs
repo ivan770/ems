@@ -36,6 +36,7 @@ pub struct SpeechRecognitionResponse {
 /// specific options via [`SpeechRecognitionConfig`]
 ///
 /// [`application config`]: Config
+#[derive(Clone)]
 pub struct SpeechRecognitionServiceConfig<'c> {
     /// Application configuration.
     pub application_config: &'c Config,
@@ -54,9 +55,11 @@ pub struct SpeechRecognitionConfig {
     pub language: String,
 
     /// Enable profanity filter (if provider supports it)?
+    #[serde(default)]
     pub profanity_filter: bool,
 
     /// Enable punctuation guessing (if provider supports it)?
+    #[serde(default)]
     pub punctuation: bool,
 }
 
@@ -73,10 +76,8 @@ impl Default for SpeechRecognitionConfig {
 #[pin_project]
 pub struct SpeechRecognitionSink<E> {
     id: Uuid,
-
     #[pin]
     database: Arc<HandlerDatabase>,
-
     _error: PhantomData<E>,
 }
 

@@ -54,6 +54,13 @@ where
 
     /// Start process of audio streaming.
     fn stream(self, stream: S) -> Self::Fut;
+
+    /// Determine if service should be restarted in case of error.
+    ///
+    /// By default, in case of fail there will be no restart for a service.
+    fn restartable(_: &Self::Error) -> bool {
+        false
+    }
 }
 
 /// Create a [`Service`] from provided config, possibly failing to do so.
@@ -82,7 +89,8 @@ async fn spawn_service<C, I, O, S>(
     mut sink: O,
 ) -> Result<(), <S as Service<I>>::Error>
 where
-    I: Stream<Item = <S as Service<I>>::Input> + Send + Sync + 'static,
+    C: Clone,
+    I: Stream<Item = <S as Service<I>>::Input> + Clone + Send + Sync + 'static,
     O: Sink<<<S as Service<I>>::Ok as TryStream>::Ok, Error = <S as Service<I>>::Error>
         + Send
         + Unpin,
@@ -94,13 +102,28 @@ where
     <S as Service<I>>::Error:
         From<<S as FromConfig<'static>>::Error> + From<<S::Ok as TryStream>::Error>,
 {
-    S::from_config(config)
-        .await?
-        .stream(stream)
-        .await?
-        .map_err(<S as Service<I>>::Error::from)
-        .forward(&mut sink)
-        .await?;
+    macro_rules! spawner {
+        ($config:expr, $stream:expr, $sink:expr) => {
+            S::from_config(config.clone())
+                .await?
+                .stream(stream.clone())
+                .await?
+                .map_err(<S as Service<I>>::Error::from)
+                .forward(&mut sink)
+                .await;
+        };
+    }
+
+    let mut spawned = spawner!(config.clone(), stream.clone(), &mut sink);
+
+    while let Err(ref e) = spawned {
+        if <S as Service<I>>::restartable(e) {
+            tracing::warn!("Restarting service due to error match");
+            spawned = spawner!(config.clone(), stream.clone(), &mut sink);
+        } else {
+            return spawned;
+        }
+    }
 
     Ok(())
 }

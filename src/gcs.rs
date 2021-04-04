@@ -12,7 +12,7 @@ use thiserror::Error;
 use tonic::{
     metadata::{errors::InvalidMetadataValue, MetadataValue},
     transport::{Certificate, Channel, ClientTlsConfig, Error as TransportError},
-    Request, Status,
+    Code, Request, Status,
 };
 use tracing::warn;
 use yup_oauth2::{
@@ -56,10 +56,27 @@ pub enum CloudSpeechError {
     AuthenticationError(#[from] OauthError),
 
     #[error("Unable to call gRPC API: {0}")]
-    CallError(#[from] Status),
+    CallError(Status),
 
     #[error("Unable to send transcription to background service: {0}")]
     FlumeError(#[from] SendError<String>),
+
+    #[error("Max GCS stream duration is 305 seconds.")]
+    TooLongStream(Status),
+}
+
+impl From<Status> for CloudSpeechError {
+    fn from(error: Status) -> Self {
+        match error.code() {
+            Code::OutOfRange
+                if error.message()
+                    == "Exceeded maximum allowed stream duration of 305 seconds." =>
+            {
+                CloudSpeechError::TooLongStream(error)
+            }
+            _ => CloudSpeechError::CallError(error),
+        }
+    }
 }
 
 pub mod await_time {
@@ -248,6 +265,10 @@ where
                 .map_ok(move |transcription| SpeechRecognitionResponse { transcription })
                 .map_err(CloudSpeechError::from))
         }
+    }
+
+    fn restartable(error: &Self::Error) -> bool {
+        matches!(error, CloudSpeechError::TooLongStream(_))
     }
 }
 

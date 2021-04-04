@@ -36,7 +36,7 @@ impl HandlerDatabase {
 
     /// Receive new WebSocket notification.
     ///
-    /// This method will yield to executor if there are no transcriptions in queue.
+    /// This method will yield to executor if there are no notifications in queue.
     pub async fn recv_notification(&self) -> WsNotification {
         self.ws_notifications.pop().await
     }

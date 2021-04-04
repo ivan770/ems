@@ -118,7 +118,6 @@ where
 
     while let Err(ref e) = spawned {
         if <S as Service<I>>::restartable(e) {
-            tracing::warn!("Restarting service due to error match");
             spawned = spawner!(config.clone(), stream.clone(), &mut sink);
         } else {
             return spawned;

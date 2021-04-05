@@ -7,7 +7,7 @@
 #![allow(clippy::unit_arg)]
 #![warn(missing_docs)]
 
-use std::{convert::TryInto, sync::Arc};
+use std::{convert::TryInto, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use argh::from_env;
@@ -16,10 +16,14 @@ use db::HandlerDatabase;
 use once_cell::sync::OnceCell;
 use server::AudioSocketServer;
 use shutdown::Shutdown;
-use tokio::{select, signal::ctrl_c};
+use tokio::{runtime, select, signal::ctrl_c};
 use tracing::subscriber::set_global_default;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use ws::WsServer;
+
+/// Timeout for Tokio runtime to gracefully shutdown. Used as a measure to send GoAway
+/// packages back to gRPC service providers (and do other stuff in background before shutting down completely)
+const RUNTIME_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[cfg(feature = "jemalloc")]
 #[global_allocator]
@@ -69,12 +73,28 @@ mod synthesis;
 /// `AsyncRead` wrapper for receiving messages.
 pub mod stream;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli: Cli = from_env();
-
     CONFIG.set(cli.try_into()?).ok();
 
+    let config = CONFIG.get().expect("Config was not set previously");
+
+    let mut builder = runtime::Builder::new_multi_thread();
+
+    if let Some(threads) = config.threads() {
+        builder.worker_threads(threads.get());
+    }
+
+    let runtime = builder.enable_all().build()?;
+
+    runtime.block_on(run(config))?;
+
+    runtime.shutdown_timeout(RUNTIME_TIMEOUT);
+
+    Ok(())
+}
+
+async fn run(config: &'static Config) -> Result<()> {
     set_global_default(
         FmtSubscriber::builder()
             .with_env_filter(EnvFilter::from_env("LOG_LEVEL"))
@@ -82,8 +102,6 @@ async fn main() -> Result<()> {
     )?;
 
     let database = Arc::new(HandlerDatabase::default());
-
-    let config = CONFIG.get().expect("Config was not set previously");
 
     select! {
         audiosocket_res = AudioSocketServer::new(config, database.clone()).listen() => audiosocket_res?,

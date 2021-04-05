@@ -127,7 +127,7 @@ where
     Ok(())
 }
 
-/// Spawn needed services from current application config.
+/// Spawn speech recognition service from current application config.
 ///
 /// Some services require their own respective features to be enabled (`gcs` for Google Cloud Speech as an example).
 #[allow(unused_variables)]
@@ -156,6 +156,9 @@ pub fn spawn_speech_recognition(
     }
 }
 
+/// Spawn speech synthesis service from current application config.
+///
+/// Some services require their own respective features to be enabled (`gctts` for Google Cloud Text-to-Speech as an example).
 #[allow(unused_variables)]
 pub fn spawn_speech_synthesis(
     config: &'static Config,
@@ -199,6 +202,7 @@ impl SpawnedSpeechRecognition {
     }
 }
 
+/// Active background speech synthesis task
 pub struct SpawnedSpeechSynthesis {
     sender: Sender<SpeechSynthesisRequest>,
 }

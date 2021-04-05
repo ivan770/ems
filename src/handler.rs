@@ -250,8 +250,6 @@ where
     }
 }
 
-// TODO: Check if we are closing connection gracefully, as debug logs
-// don't show GoAway packages when shutting down server.
 impl<'c, 's, ST, SI> Drop for IdentifiableMessageHandler<'c, 's, ST, SI> {
     fn drop(&mut self) {
         self.database.remove_handler(self.id);

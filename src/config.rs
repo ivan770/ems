@@ -1,6 +1,6 @@
 use std::{
-    convert::TryFrom, fs::read, io::Error as IoError, net::SocketAddr, path::PathBuf,
-    time::Duration,
+    convert::TryFrom, fs::read, io::Error as IoError, net::SocketAddr, num::NonZeroUsize,
+    path::PathBuf, time::Duration,
 };
 
 use argh::FromArgs;
@@ -16,6 +16,7 @@ use crate::recognition::SpeechRecognitionConfig;
 
 #[cfg(test)]
 pub static TEST_CONFIG: once_cell::sync::Lazy<Config> = once_cell::sync::Lazy::new(|| Config {
+    threads: None,
     audiosocket_addr: std::str::FromStr::from_str("127.0.0.1:12345").unwrap(),
     websocket_addr: std::str::FromStr::from_str("127.0.0.1:12346").unwrap(),
     message_timeout: 10,
@@ -83,6 +84,9 @@ pub struct Cli {
 /// TOML server configuration.
 #[derive(Serialize, Deserialize)]
 pub struct Config {
+    /// Max amount of threads that EMS can use.
+    threads: Option<NonZeroUsize>,
+
     /// AudioSocket server address.
     audiosocket_addr: SocketAddr,
 
@@ -139,6 +143,14 @@ impl TryFrom<Cli> for Config {
 }
 
 impl Config {
+    /// Get configured amount of threads for EMS to use.
+    ///
+    /// If [`None`], don't pass any amount configuration to Tokio runtime,
+    /// so that EMS can use all available CPU cores.
+    pub fn threads(&self) -> Option<NonZeroUsize> {
+        self.threads.as_ref().copied()
+    }
+
     /// Get configured AudioSocket server address.
     pub fn audiosocket_addr(&self) -> &SocketAddr {
         &self.audiosocket_addr

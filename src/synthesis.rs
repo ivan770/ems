@@ -104,8 +104,13 @@ impl<E> Sink<SpeechSynthesisResponse> for SpeechSynthesisSink<E> {
     ) -> Result<(), Self::Error> {
         let this = self.project();
 
-        this.database
-            .send(&response.id, MessageHandlerAction::Play(response.audio));
+        this.database.send(
+            &response.id,
+            MessageHandlerAction::Play {
+                audio: response.audio,
+                apply_latency: true,
+            },
+        );
 
         Ok(())
     }

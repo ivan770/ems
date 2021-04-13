@@ -183,8 +183,14 @@ async fn accept_messages<S>(
                         database.send(&message.id, MessageHandlerAction::Hangup);
                     }
                     (WsAction::Play(audio), _) => match decode(audio) {
-                        Ok(decoded) => {
-                            database.send(&message.id, MessageHandlerAction::Play(decoded));
+                        Ok(audio) => {
+                            database.send(
+                                &message.id,
+                                MessageHandlerAction::Play {
+                                    audio,
+                                    apply_latency: true,
+                                },
+                            );
                         }
                         Err(e) => {
                             error!(error = %e, "Provided value is not base64 encoded.");
@@ -394,15 +400,16 @@ mod tests {
     async fn accept_ws_audio() {
         accept_test(
             expect![[r#"
-                Play(
-                    [
+                Play {
+                    audio: [
                         1,
                         2,
                         3,
                         4,
                         5,
                     ],
-                )
+                    apply_latency: true,
+                }
             "#]],
             format!(
                 r#"

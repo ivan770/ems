@@ -90,7 +90,17 @@ pub enum MessageHandlerAction {
     Hangup,
 
     /// Play audio on channel.
-    Play(Vec<u8>),
+    Play {
+        /// Audio provided for playback.
+        audio: Vec<u8>,
+
+        /// Should EMS apply 20 ms latency after each 320 bytes?
+        ///
+        /// Generally, this value should always be [`true`], except
+        /// for cases when you know for sure that latency is already
+        /// applied to audio (like in case of loopback).
+        apply_latency: bool,
+    },
 
     /// Provide speech recognition config to handler
     RecognitionConfig(SpeechRecognitionConfig),
@@ -137,9 +147,6 @@ where
     /// Listen for incoming messages from [`MessageStream`], and execute [`MessageHandlerAction`] events.
     #[instrument(skip(self), err, name = "id_listen", fields(id = %self.id))]
     pub async fn listen(mut self, max_time: Duration) -> Result<(), ServerError> {
-        self.database
-            .add_notification(WsNotification::RecognitionConfigRequest(self.id));
-
         let (recognition_sender, recognition_receiver) = oneshot::channel();
 
         let result = select! {
@@ -173,31 +180,39 @@ where
             prepare_recognition_service(id, config, database.clone(), recognition_receiver).await;
 
         loop {
-            match (stream.recv(max_time).await, recognition.as_ref()) {
-                (Ok(Message::Identifier(_)), _) => {
+            match stream.recv(max_time).await {
+                Ok(Message::Identifier(_)) => {
                     warn!("Received identifier message on identified message handler")
                 }
-                (Ok(Message::Audio(Some(audio))), Some(dispatched)) => {
+                Ok(Message::Audio(Some(audio))) => {
                     if config.loopback_audio() {
-                        database.send(&id, MessageHandlerAction::Play(audio.to_owned()));
+                        database.send(
+                            &id,
+                            MessageHandlerAction::Play {
+                                audio: audio.to_vec(),
+                                apply_latency: false,
+                            },
+                        );
                     }
 
-                    dispatched.send(SpeechRecognitionRequest {
-                        audio: audio.to_owned(),
-                    });
+                    if let Some(dispatched) = recognition.as_ref() {
+                        dispatched.send(SpeechRecognitionRequest {
+                            audio: audio.to_owned(),
+                        });
+                    }
                 }
-                (Ok(Message::Terminate), _) => {
+                Ok(Message::Terminate) => {
                     debug!("Obtained termination message");
                     return ServerError::ClientDisconnected(None);
                 }
-                (Err(ServerError::IoError(e)), _)
+                Err(ServerError::IoError(e))
                     if e.kind() == ErrorKind::BrokenPipe
                         || e.kind() == ErrorKind::UnexpectedEof
                         || e.kind() == ErrorKind::ConnectionReset =>
                 {
                     return ServerError::ClientDisconnected(Some(e));
                 }
-                (Err(e), _) => return e,
+                Err(e) => return e,
                 _ => {}
             }
         }
@@ -228,19 +243,22 @@ where
                         sender.send(config).ok();
                     }
                 }
-                MessageHandlerAction::Play(audio) => {
+                MessageHandlerAction::Play {
+                    audio,
+                    apply_latency,
+                } => {
                     let chunks = audio.chunks_exact(CHUNK_SIZE);
                     let remainder = chunks.remainder();
 
                     for chunk in chunks {
-                        write_audio(&mut sink, chunk).await?;
+                        write_audio(&mut sink, chunk, apply_latency).await?;
                     }
 
                     if !remainder.is_empty() {
                         let mut remainder = remainder.to_owned();
                         remainder.resize(CHUNK_SIZE, 0);
 
-                        write_audio(&mut sink, &remainder).await?;
+                        write_audio(&mut sink, &remainder, apply_latency).await?;
                     }
                 }
             }
@@ -262,6 +280,13 @@ async fn prepare_recognition_service(
     database: Arc<HandlerDatabase>,
     recognition_receiver: oneshot::Receiver<SpeechRecognitionConfig>,
 ) -> Option<SpawnedSpeechRecognition> {
+    // Short-circuit if config doesn't have any recognition service enabled
+    if application_config.recognition_driver().is_none() {
+        return None;
+    }
+
+    database.add_notification(WsNotification::RecognitionConfigRequest(id));
+
     let recognition_config = timeout(
         application_config.recognition_config_timeout(),
         recognition_receiver,
@@ -285,11 +310,13 @@ async fn prepare_recognition_service(
     spawn_speech_recognition(id, recognition_config, database)
 }
 
-async fn write_audio<S>(mut sink: S, chunk: &[u8]) -> Result<(), ServerError>
+async fn write_audio<S>(mut sink: S, chunk: &[u8], apply_latency: bool) -> Result<(), ServerError>
 where
     S: AsyncWrite + Unpin,
 {
-    sleep(TICK_DURATION).await;
+    if apply_latency {
+        sleep(TICK_DURATION).await;
+    }
 
     sink.write_all(&TryInto::<Vec<u8>>::try_into(Message::Audio(Some(chunk)))?)
         .await?;
@@ -424,17 +451,26 @@ mod tests {
 
         database.send(
             &Uuid::nil(),
-            MessageHandlerAction::Play(vec![1, 2, 3, 4, 5]),
+            MessageHandlerAction::Play {
+                audio: vec![1, 2, 3, 4, 5],
+                apply_latency: true,
+            },
         );
 
         database.send(
             &Uuid::nil(),
-            MessageHandlerAction::Play(Vec::from([1; 320])),
+            MessageHandlerAction::Play {
+                audio: Vec::from([1; 320]),
+                apply_latency: true,
+            },
         );
 
         database.send(
             &Uuid::nil(),
-            MessageHandlerAction::Play(Vec::from([1; 320 * 2])),
+            MessageHandlerAction::Play {
+                audio: Vec::from([1; 320 * 2]),
+                apply_latency: true,
+            },
         );
 
         // Wait for handler to send audio back

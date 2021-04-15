@@ -46,6 +46,7 @@ struct WsMessage {
 
 /// WebSocket actions, that handler can send or execute.
 #[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 enum WsAction {
     /// Terminate current call.
     Hangup,
@@ -387,7 +388,7 @@ mod tests {
                 r#"
 {{
     "id": "{}",
-    "data": "Hangup"
+    "data": "hangup"
 }}
                 "#,
                 TEST_ID
@@ -416,7 +417,7 @@ mod tests {
 {{
     "id": "{}",
     "data": {{
-        "Play": "{}"
+        "play": "{}"
     }}
 }}
                 "#,
@@ -430,14 +431,14 @@ mod tests {
     #[tokio::test]
     async fn send_ws_transcriptions() {
         send_test(expect![[r#"
-            "{\"id\":\"00000000-0000-0000-0000-000000000000\",\"data\":{\"Transcription\":\"Hello, world\"}}"
+            "{\"id\":\"00000000-0000-0000-0000-000000000000\",\"data\":{\"transcription\":\"Hello, world\"}}"
         "#]], WsNotification::Transcription(TEST_ID, String::from("Hello, world"))).await;
     }
 
     #[tokio::test]
     async fn send_recognition_config_requests() {
         send_test(expect![[r#"
-            "{\"id\":\"00000000-0000-0000-0000-000000000000\",\"data\":\"RecognitionConfigRequest\"}"
+            "{\"id\":\"00000000-0000-0000-0000-000000000000\",\"data\":\"recognitionConfigRequest\"}"
         "#]], WsNotification::RecognitionConfigRequest(TEST_ID)).await;
     }
 
@@ -457,7 +458,7 @@ mod tests {
                 r#"
 {{
     "id": "{}",
-    "data": {{"RecognitionConfig": {{
+    "data": {{"recognitionConfig": {{
         "language": "ru-RU",
         "profanity_filter": true,
         "punctuation": true
@@ -486,7 +487,7 @@ mod tests {
                 r#"
 {{
     "id": "{}",
-    "data": {{"RecognitionConfig": {{
+    "data": {{"recognitionConfig": {{
         "language": "ru-RU"
     }}}}
 }}

@@ -65,7 +65,7 @@ Terminate call:
 ```json
 {
     "id": "00000000-0000-0000-0000-000000000000",
-    "data": "Hangup"
+    "data": "hangup"
 }
 ```
 
@@ -76,7 +76,7 @@ Synthesize speech:
 {
     "id": "00000000-0000-0000-0000-000000000000",
     "data": {
-        "Synthesize": {
+        "synthesize": {
             "ssml": "Hello, world",
             "language_code": "en-US",
             "gender": "neutral",
@@ -94,7 +94,7 @@ Speech recognition config:
 {
     "id": "00000000-0000-0000-0000-000000000000",
     "data": {
-        "RecognitionConfig": {
+        "recognitionConfig": {
             "language": "en-US",
             "profanity_filter": false,
             "punctuation": false
@@ -110,7 +110,7 @@ Call transcription:
 {
     "id": "00000000-0000-0000-0000-000000000000",
     "data": {
-        "Transcription": "Hello, world"
+        "transcription": "Hello, world"
     }
 }
 ```
@@ -119,6 +119,6 @@ Recognition config request:
 ```json
 {
     "id": "00000000-0000-0000-0000-000000000000",
-    "data": "RecognitionConfigRequest"
+    "data": "recognitionConfigRequest"
 }
 ```

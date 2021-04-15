@@ -105,8 +105,8 @@ pub mod await_time {
         }
 
         /// Unwrap [`Duration`] from [`AwaitTime`].
-        pub fn inner(&self) -> &Duration {
-            &self.0
+        pub fn inner(self) -> Duration {
+            self.0
         }
     }
 
@@ -234,7 +234,7 @@ where
                     })
                     .chain(stream.map(|recognition_request| StreamingRecognizeRequest {
                         streaming_request: Some(StreamingRequest::AudioContent(recognition_request.audio)),
-                    })), *self.max_time.inner())
+                    })), self.max_time.inner())
                     .map(|result| {
                         match result {
                             Ok(req) => req,

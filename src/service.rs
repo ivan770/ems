@@ -114,11 +114,11 @@ where
         };
     }
 
-    let mut spawned = spawner!(config.clone(), stream.clone(), &mut sink);
+    let mut spawned = spawner!(config.clone(), stream.clone(), sink);
 
     while let Err(ref e) = spawned {
         if <S as Service<I>>::restartable(e) {
-            spawned = spawner!(config.clone(), stream.clone(), &mut sink);
+            spawned = spawner!(config.clone(), stream.clone(), sink);
         } else {
             return spawned;
         }

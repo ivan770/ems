@@ -21,6 +21,16 @@ and play text that you send via connection.
 
 Currently, only Google Cloud services are supported - [Cloud Speech-to-Text](https://cloud.google.com/speech-to-text) and [Cloud Text-to-Speech](https://cloud.google.com/text-to-speech). If you have an implementation for similar services of other cloud providers - PRs are always appreciated.
 
+## Build
+EMS uses [rustup](https://rustup.rs/) to manage the Rust toolchain, so ensure
+that you have it installed.
+```
+$ git clone https://github.com/ivan770/ems
+$ cd ems
+$ cargo build --release
+$ ./target/release/ems --help
+```
+
 ## Usage
 To start using EMS you have to configure a server via `./ems.toml` file (you can change path via `--config` flag):
 ```toml
